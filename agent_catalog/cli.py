@@ -476,6 +476,74 @@ def _find_manifests(root: Path, pattern: str) -> list[Path]:
     return sorted(results)
 
 
+@app.command()
+def security_audit(
+    output_format: str = typer.Option("table", "--format", "-f", help="Output: table, json"),
+):
+    """Audit all registered agents for security gaps."""
+    from agent_catalog.security import audit_catalog
+
+    findings = audit_catalog(_get_store())
+    if not findings:
+        console.print("[green]No security issues found[/]")
+        return
+
+    if output_format == "json":
+        import json
+
+        console.print(
+            json.dumps(
+                [
+                    {"severity": f.severity, "agent": f.agent, "title": f.title, "detail": f.detail}
+                    for f in findings
+                ],
+                indent=2,
+            )
+        )
+        return
+
+    table = Table(title="Security Audit")
+    table.add_column("Severity", style="bold")
+    table.add_column("Agent")
+    table.add_column("Issue")
+    table.add_column("Detail", style="dim")
+
+    for f in findings:
+        color = {"critical": "red", "high": "yellow", "medium": "dim", "low": "dim"}[f.severity]
+        table.add_row(f"[{color}]{f.severity}[/]", f.agent, f.title, f.detail)
+
+    console.print(table)
+    crit = sum(1 for f in findings if f.severity == "critical")
+    high = sum(1 for f in findings if f.severity == "high")
+    console.print(f"[bold]Summary:[/] {len(findings)} findings ({crit} critical, {high} high)")
+
+
+@app.command()
+def graph(
+    output_format: str = typer.Option("mermaid", "--format", "-f", help="Output: mermaid, json"),
+):
+    """Show agent dependency graph."""
+    from agent_catalog.graph import build_graph, to_mermaid
+
+    store = _get_store()
+    if output_format == "json":
+        import json
+
+        console.print_json(json.dumps(build_graph(store), default=str))
+    else:
+        console.print(to_mermaid(store))
+
+
+@app.command()
+def serve(
+    port: int = typer.Option(8420, "--port", "-p", help="HTTP port"),
+):
+    """Start the Agent Marketplace web dashboard."""
+    from agent_catalog.serve import serve as run_serve
+
+    run_serve(port=port, store=_get_store())
+
+
 def main() -> None:
     """Entry point for the 'agent-catalog' command."""
     app()
