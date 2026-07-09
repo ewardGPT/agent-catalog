@@ -383,7 +383,10 @@ def update(
 def sync(
     directory: str = typer.Argument(".", help="Directory to scan for agent manifests"),
     pattern: str = typer.Option(
-        "**/*agent*.yaml", "--pattern", "-p", help="Glob pattern for manifest files"
+        "agent.yaml",
+        "--pattern",
+        "-p",
+        help="Filename pattern to match",
     ),
     env: str = typer.Option(
         "production", "--env", "-e", help="Default environment for discovered agents"
@@ -398,7 +401,7 @@ def sync(
         console.print(f"[red]✗[/] Directory not found: {root}")
         raise typer.Exit(1)
 
-    manifests = sorted(root.glob(pattern))
+    manifests = _find_manifests(root, pattern)
     if not manifests:
         console.print(f"[yellow]No files matching '{pattern}' in {root}[/]")
         return
@@ -439,6 +442,38 @@ def sync(
         )
     else:
         console.print(f"\n[dim]Dry run: would register {registered}, skip {skipped}[/]")
+
+
+def _find_manifests(root: Path, pattern: str) -> list[Path]:
+    """Find manifest files using manual directory scan (workaround for broken rglob)."""
+    import fnmatch
+    import os
+
+    results: list[Path] = []
+    # Try Python glob first (works in most environments)
+    try:
+        py_results = list(root.glob(pattern))
+        if py_results:
+            return sorted(py_results)
+    except Exception:
+        pass
+
+    # Fallback: manual scan with os.scandir
+    for dirpath, _dirnames, filenames in os.walk(str(root)):
+        for f in filenames:
+            if fnmatch.fnmatch(f, "agent.yaml") or fnmatch.fnmatch(f, "*.yaml"):
+                full = Path(dirpath) / f
+                if fnmatch.fnmatch(str(full.relative_to(root)), pattern):
+                    results.append(full)
+
+    # Also scan immediate subdirs explicitly for agent.yaml
+    for entry in os.scandir(str(root)):
+        if entry.is_dir() and not entry.name.startswith("."):
+            candidate = Path(entry.path) / "agent.yaml"
+            if candidate.exists() and candidate not in results:
+                results.append(candidate)
+
+    return sorted(results)
 
 
 def main() -> None:
