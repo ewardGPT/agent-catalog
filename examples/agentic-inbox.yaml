@@ -1,0 +1,143 @@
+manifest_version: "1.0"
+name: "Agentic Inbox"
+slug: agentic-inbox
+description: "Self-hosted email client with an AI agent running on Cloudflare Workers"
+version: "2.1.0"
+environment: production
+status: active
+
+capabilities:
+  - id: read_inbox
+    description: "Read and search emails across mailboxes"
+    tools: [read_inbox, search_conversations, list_folders]
+    surfaces: [user, mcp]
+    evaluation_methods: [deterministic, outcome]
+    critical: true
+  - id: send_email
+    description: "Compose and send emails via Cloudflare Email Service"
+    tools: [send_email, reply_to_email, forward_email]
+    surfaces: [user, mcp]
+    requires_confirmation: true
+    side_effects: [email_send]
+    evaluation_methods: [deterministic, safety]
+    critical: true
+  - id: auto_draft
+    description: "Automatically draft replies for incoming emails"
+    tools: [read_inbox, generate_draft]
+    surfaces: [user]
+    requires_confirmation: true
+    side_effects: [email_send]
+    evaluation_methods: [outcome, llm_judge]
+  - id: search_attachments
+    description: "Search through email attachments stored in R2"
+    tools: [search_attachments, download_attachment]
+    surfaces: [user, mcp]
+    side_effects: [file_read]
+    evaluation_methods: [deterministic]
+
+model:
+  provider: cloudflare
+  name: "@cf/moonshotai/kimi-k2.5"
+  config:
+    temperature: 0.7
+    max_tokens: 4096
+
+tools:
+  - name: read_inbox
+    description: "Read emails from a mailbox"
+    parameters:
+      type: object
+      properties:
+        mailbox_id: {type: string, description: "Mailbox Durable Object ID"}
+        limit: {type: integer, default: 20}
+        folder: {type: string, default: "inbox"}
+    side_effects: [db_read]
+    idempotent: true
+  - name: search_conversations
+    description: "Full-text search across email conversations"
+    parameters:
+      type: object
+      properties:
+        query: {type: string, description: "Search query"}
+        mailbox_id: {type: string}
+        limit: {type: integer, default: 10}
+    side_effects: [db_read, search]
+    idempotent: true
+  - name: send_email
+    description: "Send an email"
+    parameters:
+      type: object
+      properties:
+        to: {type: string, format: email}
+        subject: {type: string}
+        body: {type: string}
+        mailbox_id: {type: string}
+    side_effects: [email_send]
+    idempotent: false
+  - name: generate_draft
+    description: "Generate a draft reply using AI"
+    parameters:
+      type: object
+      properties:
+        email_id: {type: string}
+        context: {type: string}
+    side_effects: [none]
+    idempotent: false
+
+interfaces:
+  - type: web
+    path: /
+    auth_required: true
+  - type: mcp
+    path: /mcp
+    auth_required: true
+  - type: websocket
+    path: /ws
+    auth_required: true
+
+dependencies:
+  - name: cloudflare-workers
+    type: platform
+    required: true
+    description: "Cloudflare Workers runtime"
+  - name: cloudflare-r2
+    type: storage
+    required: true
+    description: "R2 bucket for attachments"
+  - name: cloudflare-email-routing
+    type: service
+    required: true
+    description: "Cloudflare Email Routing for inbound/outbound"
+
+eval_contract:
+  suites:
+    - agentic_inbox:injection
+    - agentic_inbox:auto_draft_smoke
+  coverage_required: 0.80
+  project: agentic-inbox
+
+prompt:
+  - version: "v4"
+    hash: "54a3b2c1"
+    date: "2026-03-15"
+    path: "prompts/v4/system.yaml"
+  - version: "v3"
+    hash: "12de8f9a"
+    date: "2025-12-01"
+    path: "prompts/v3/system.yaml"
+
+metadata:
+  repository: "https://github.com/cloudflare/agentic-inbox"
+  team: inbox
+  sla: "99.5% uptime"
+  environments:
+    staging:
+      environment: staging
+      model:
+        provider: cloudflare
+        name: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+      prompt:
+        - version: "v5-dev"
+          hash: "bb7c1d4e"
+    production:
+      environment: production

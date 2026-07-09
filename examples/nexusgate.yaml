@@ -1,0 +1,99 @@
+manifest_version: "1.0"
+name: "NexusGate Data Pipeline"
+slug: nexusgate
+description: "Lead generation data pipeline — query generation, enrichment, scoring, delivery"
+version: "1.5.0"
+environment: production
+status: active
+
+capabilities:
+  - id: query_generation
+    description: "Generate lead search queries from business criteria"
+    tools: [generate_queries, refine_queries]
+    surfaces: [cli, api]
+    evaluation_methods: [deterministic, outcome]
+    critical: true
+  - id: lead_scoring
+    description: "Score and rank leads by quality signals"
+    tools: [score_lead, rank_leads, classify_lead]
+    surfaces: [api]
+    evaluation_methods: [deterministic]
+    critical: true
+  - id: data_enrichment
+    description: "Enrich lead records with external data sources"
+    tools: [enrich_email, enrich_company, lookup_domain]
+    surfaces: [api]
+    side_effects: [api_call, db_write]
+    evaluation_methods: [outcome, operational]
+    critical: false
+
+model:
+  provider: aws
+  name: "bedrock/anthropic.claude-3-haiku-20240307-v1:0"
+  config:
+    temperature: 0.3
+    max_tokens: 2048
+
+tools:
+  - name: generate_queries
+    description: "Generate search queries from business criteria"
+    parameters:
+      type: object
+      properties:
+        industry: {type: string}
+        location: {type: string}
+        count: {type: integer, default: 10}
+    side_effects: [none]
+    idempotent: true
+  - name: score_lead
+    description: "Score a lead record against quality criteria"
+    parameters:
+      type: object
+      properties:
+        lead_id: {type: string}
+        signals: {type: array, items: {type: string}}
+    side_effects: [db_read, db_write]
+    idempotent: false
+  - name: enrich_email
+    description: "Enrich an email address with external validation"
+    parameters:
+      type: object
+      properties:
+        email: {type: string, format: email}
+    side_effects: [api_call, db_write]
+    idempotent: false
+
+interfaces:
+  - type: cli
+    path: "nexusgate"
+    auth_required: false
+  - type: api
+    path: "http://localhost:8000"
+    auth_required: true
+
+dependencies:
+  - name: postgres
+    type: database
+    required: true
+    description: "Lead data storage"
+  - name: hopper-hpc
+    type: compute
+    required: false
+    description: "GMU batch enrichment via scraper-nyc3"
+
+eval_contract:
+  suites:
+    - nexusgate:query_generation
+    - nexusgate:lead_scoring
+  coverage_required: 0.75
+  project: nexusgate
+
+prompt:
+  - version: "v2.1"
+    hash: "a1b2c3d4"
+    date: "2026-01-10"
+
+metadata:
+  repository: "https://github.com/nexusgate/nexusgate-daaS"
+  team: data
+  sla: "daily batch delivery"

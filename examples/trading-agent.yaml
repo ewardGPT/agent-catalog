@@ -1,0 +1,117 @@
+manifest_version: "1.0"
+name: "Trading Signal Agent"
+slug: trading-agent
+description: "Quantitative trading signal detection and execution agent"
+version: "0.5.0"
+environment: research
+status: experimental
+
+capabilities:
+  - id: signal_detection
+    description: "Detect trading signals from market data streams"
+    tools: [fetch_market_data, detect_pattern, screen_stocks]
+    surfaces: [cli]
+    evaluation_methods: [outcome, operational]
+    critical: true
+  - id: risk_assessment
+    description: "Evaluate position risk and portfolio exposure"
+    tools: [calculate_var, check_exposure, stress_test]
+    surfaces: [cli]
+    evaluation_methods: [deterministic]
+    critical: true
+  - id: backtest
+    description: "Backtest strategies against historical data"
+    tools: [run_backtest, analyze_drawdown, monte_carlo_sim]
+    surfaces: [cli]
+    side_effects: [file_write]
+    evaluation_methods: [deterministic, trajectory]
+    critical: true
+  - id: order_submission
+    description: "Submit validated orders to broker API"
+    tools: [validate_order, submit_order, check_fill]
+    surfaces: [api]
+    requires_confirmation: true
+    side_effects: [order_submit]
+    evaluation_methods: [safety, outcome]
+    critical: true
+
+model:
+  provider: anthropic
+  name: "claude-3-sonnet-20240229"
+  config:
+    temperature: 0.1
+    max_tokens: 4096
+
+tools:
+  - name: fetch_market_data
+    description: "Fetch real-time or historical market data"
+    parameters:
+      type: object
+      properties:
+        symbol: {type: string}
+        timeframe: {type: string, enum: ["1m", "5m", "15m", "1h", "1d"]}
+        bars: {type: integer, default: 100}
+    side_effects: [api_call]
+    idempotent: true
+  - name: detect_pattern
+    description: "Detect technical patterns in price data"
+    parameters:
+      type: object
+      properties:
+        data: {type: array}
+        pattern: {type: string}
+    side_effects: [none]
+    idempotent: true
+  - name: run_backtest
+    description: "Run a strategy backtest on historical data"
+    parameters:
+      type: object
+      properties:
+        strategy: {type: string}
+        symbols: {type: array, items: {type: string}}
+        start_date: {type: string, format: date}
+        end_date: {type: string, format: date}
+    side_effects: [file_write, api_call]
+    idempotent: false
+  - name: submit_order
+    description: "Submit a trading order to the broker"
+    parameters:
+      type: object
+      properties:
+        symbol: {type: string}
+        action: {type: string, enum: ["buy", "sell"]}
+        quantity: {type: integer}
+        order_type: {type: string, enum: ["market", "limit", "stop"]}
+        limit_price: {type: number}
+    side_effects: [order_submit]
+    idempotent: false
+
+interfaces:
+  - type: cli
+    auth_required: false
+  - type: api
+    path: "http://localhost:9000"
+    auth_required: true
+
+dependencies:
+  - name: market-data-api
+    type: api
+    required: true
+    description: "Market data provider (Alpaca, IBKR, etc.)"
+  - name: broker-api
+    type: api
+    required: true
+    description: "Broker execution API"
+
+eval_contract:
+  suites:
+    - trading:signal_detection
+    - trading:risk_assessment
+  coverage_required: 0.70
+  project: trading
+
+metadata:
+  repository: "https://github.com/nxgtrading/research"
+  team: quant
+  sla: "research only — no live trading yet"
+  risk_level: high
