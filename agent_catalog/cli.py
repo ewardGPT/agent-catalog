@@ -379,6 +379,68 @@ def update(
         raise typer.Exit(1) from e
 
 
+@app.command()
+def sync(
+    directory: str = typer.Argument(".", help="Directory to scan for agent manifests"),
+    pattern: str = typer.Option(
+        "**/*agent*.yaml", "--pattern", "-p", help="Glob pattern for manifest files"
+    ),
+    env: str = typer.Option(
+        "production", "--env", "-e", help="Default environment for discovered agents"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be registered without doing it"
+    ),
+):
+    """Auto-discover and register agent manifests from a project directory."""
+    root = Path(directory).resolve()
+    if not root.exists():
+        console.print(f"[red]✗[/] Directory not found: {root}")
+        raise typer.Exit(1)
+
+    manifests = sorted(root.glob(pattern))
+    if not manifests:
+        console.print(f"[yellow]No files matching '{pattern}' in {root}[/]")
+        return
+
+    console.print(f"[bold]Found {len(manifests)} manifest(s):[/]")
+
+    registered = 0
+    skipped = 0
+
+    for path in manifests:
+        rel = path.relative_to(root)
+        try:
+            raw = __import__("yaml").safe_load(path.read_text())
+            if not raw or "name" not in raw:
+                console.print(f"  [yellow]⚠[/] {rel}: not a valid agent manifest (missing 'name')")
+                skipped += 1
+                continue
+
+            manifest = AgentManifest.model_validate(raw)
+            if not manifest.environment or manifest.environment == "production":
+                manifest.environment = env
+
+            if not dry_run:
+                _get_store().register(path)
+                console.print(f"  [green]✓[/] {rel} → {manifest.slug} @ {manifest.environment}")
+            else:
+                console.print(
+                    f"  [dim]would register {rel} → {manifest.slug} @ {manifest.environment}[/]"
+                )
+            registered += 1
+        except Exception as e:
+            console.print(f"  [red]✗[/] {rel}: {e}")
+            skipped += 1
+
+    if not dry_run:
+        console.print(
+            f"\n[green]✓[/] Registered [bold]{registered}[/] agent(s) (skipped {skipped})"
+        )
+    else:
+        console.print(f"\n[dim]Dry run: would register {registered}, skip {skipped}[/]")
+
+
 def main() -> None:
     """Entry point for the 'agent-catalog' command."""
     app()
