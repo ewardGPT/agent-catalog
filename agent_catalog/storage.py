@@ -21,7 +21,14 @@ class CatalogStore:
     DEFAULT_DIR = Path.home() / ".config" / "agent-catalog" / "agents"
 
     def __init__(self, root: str | Path | None = None) -> None:
-        self.root = Path(root) if root else self.DEFAULT_DIR
+        import os
+
+        if root:
+            self.root = Path(root)
+        elif os.environ.get("AGENT_CATALOG_DIR"):
+            self.root = Path(os.environ["AGENT_CATALOG_DIR"])
+        else:
+            self.root = self.DEFAULT_DIR
         self.root.mkdir(parents=True, exist_ok=True)
         self._index_path = self.root / "index.yaml"
 
