@@ -544,6 +544,157 @@ def serve(
     run_serve(port=port, store=_get_store())
 
 
+@app.command()
+def scan(
+    directory: str = typer.Argument(".", help="Directory to scan for decorated agent classes"),
+    pattern: str = typer.Option(
+        "**/*.py",
+        "--pattern",
+        "-p",
+        help="Glob pattern for Python files",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be registered without doing it"
+    ),
+):
+    """Discover @agent-decorated classes and register them.
+
+    Scans Python files for classes decorated with @agent, builds manifests,
+    and registers them in the catalog.
+    """
+    import yaml
+
+    from agent_catalog.discovery import scan_directory
+
+    root = Path(directory).resolve()
+    if not root.exists():
+        console.print(f"[red]✗[/] Directory not found: {root}")
+        raise typer.Exit(1)
+
+    found = scan_directory(root, pattern=pattern)
+    if not found:
+        console.print(f"[yellow]No @agent-decorated classes found in {root}[/]")
+        return
+
+    console.print(f"[bold]Found {len(found)} agent class(es):[/]")
+
+    registered = 0
+    skipped = 0
+
+    for path, cls in found:
+        rel = path.relative_to(root)
+        try:
+            from agent_catalog.decorators import build_manifest
+
+            manifest = build_manifest(cls)
+            meta = dict(manifest.metadata)
+            meta["python_module"] = str(path.resolve())
+            meta["python_class"] = cls.__name__
+            manifest.metadata = meta
+            if not dry_run:
+                _get_store().register_manifest(manifest)
+                console.print(
+                    f"  [green]✓[/] {rel} → [bold]{manifest.slug}[/] @ {manifest.environment}"
+                )
+            else:
+                console.print(
+                    f"  [dim]would register {rel} → {manifest.slug} @ {manifest.environment}[/]"
+                )
+            registered += 1
+        except Exception as e:
+            console.print(f"  [red]✗[/] {rel}: {e}")
+            skipped += 1
+
+    if not dry_run:
+        console.print(
+            f"\n[green]✓[/] Registered [bold]{registered}[/] agent(s) (skipped {skipped})"
+        )
+    else:
+        console.print(f"\n[dim]Dry run: would register {registered}, skip {skipped}[/]")
+
+
+@app.command()
+def inspect(
+    path: str = typer.Argument(..., help="Path to Python file with @agent-decorated class"),
+    format: str = typer.Option("yaml", "--format", "-f", help="Output format: yaml, json"),
+):
+    """Inspect a Python file and show the generated agent manifest.
+
+    Imports the file, finds @agent classes, builds manifests, and
+    displays them without registering.
+    """
+    import json
+
+    import yaml
+
+    from agent_catalog.discovery import scan_module
+
+    file_path = Path(path).resolve()
+    if not file_path.exists():
+        console.print(f"[red]✗[/] File not found: {file_path}")
+        raise typer.Exit(1)
+
+    from agent_catalog.decorators import build_manifest
+
+    classes = scan_module(file_path)
+    if not classes:
+        console.print(f"[yellow]No @agent-decorated classes found in {file_path}[/]")
+        return
+
+    for i, cls in enumerate(classes):
+        try:
+            manifest = build_manifest(cls)
+            data = manifest.model_dump(mode="json", exclude_none=True)
+
+            if format == "json":
+                console.print_json(json.dumps(data, default=str, indent=2))
+            else:
+                yaml_text = yaml.dump(
+                    data, sort_keys=False, default_flow_style=False, allow_unicode=True
+                )
+                console.print(yaml_text)
+
+            if i < len(classes) - 1:
+                console.print("---")
+        except Exception as e:
+            console.print(f"[red]✗[/] {cls.__name__}: {e}")
+
+
+@app.command()
+def run(
+    slug: str = typer.Argument(..., help="Agent slug"),
+    capability: str = typer.Argument(..., help="Capability ID to invoke"),
+    params: str | None = typer.Option(None, "--params", "-p", help="JSON string of parameters"),
+):
+    """Load an agent and invoke a capability at runtime.
+
+    Uses metadata.python_module / metadata.python_class to find and
+    import the agent class, then calls the capability method.
+
+    Examples:
+        agent-catalog run my-agent greet
+        agent-catalog run my-agent greet --params '{"name": "World"}'
+    """
+    import json
+
+    from agent_catalog.loader import invoke_capability
+
+    kwargs: dict = {}
+    if params:
+        try:
+            kwargs = json.loads(params)
+        except json.JSONDecodeError as e:
+            console.print(f"[red]✗[/] Invalid JSON in --params: {e}")
+            raise typer.Exit(1) from e
+
+    try:
+        result = invoke_capability(slug, capability, store=_get_store(), **kwargs)
+        console.print(result)
+    except Exception as e:
+        console.print(f"[red]✗[/] {e}")
+        raise typer.Exit(1) from e
+
+
 def main() -> None:
     """Entry point for the 'agent-catalog' command."""
     app()

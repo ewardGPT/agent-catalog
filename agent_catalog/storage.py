@@ -58,6 +58,13 @@ class CatalogStore:
             raise FileNotFoundError(f"Manifest not found: {src}")
 
         manifest = self._parse(src)
+        return self.register_manifest(manifest)
+
+    def register_manifest(self, manifest: AgentManifest) -> AgentManifest:
+        """Register an AgentManifest directly (bypasses YAML file parsing).
+
+        Copies the manifest into the catalog directory and indexes it.
+        """
         now = datetime.now(timezone.utc)
         manifest.registered_at = manifest.registered_at or now
         manifest.updated_at = now
