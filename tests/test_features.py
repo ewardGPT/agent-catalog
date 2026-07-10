@@ -7,16 +7,15 @@ import tempfile
 import pytest
 
 from agent_catalog.graph import build_graph, to_mermaid
-from agent_catalog.security import SecurityFinding, audit_catalog, _audit_agent
-from agent_catalog.storage import CatalogStore
 from agent_catalog.schema import (
     AgentManifest,
     Capability,
     Interface,
     SideEffect,
     Surface,
-    ToolDeclaration,
 )
+from agent_catalog.security import SecurityFinding, _audit_agent, audit_catalog
+from agent_catalog.storage import CatalogStore
 
 
 @pytest.fixture
@@ -27,8 +26,10 @@ def store():
 
 @pytest.fixture
 def sample_agent(store):
-    import yaml, tempfile
+    import tempfile
     from pathlib import Path
+
+    import yaml
 
     manifest = {
         "manifest_version": "1.0",
@@ -73,8 +74,10 @@ def sample_agent(store):
         ],
         "interfaces": [{"type": "mcp", "path": "/mcp", "auth_required": False}],
     }
-    path = Path(td.name) / "test-agent.yaml"
-    path.write_text(yaml.dump(manifest))
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "test-agent.yaml"
+        path.write_text(yaml.dump(manifest))
+        agent = store.register(path)
     return agent
 
 
@@ -140,6 +143,7 @@ class TestDependencyGraph:
     def test_build_graph_with_agent(self):
         import tempfile
         from pathlib import Path
+
         import yaml
 
         with tempfile.TemporaryDirectory() as td:
@@ -175,7 +179,7 @@ class TestCLIIntegration:
         assert callable(serve)
 
     def test_config_importable(self):
-        from agent_catalog.config import load_config, get
+        from agent_catalog.config import get, load_config
 
         c = load_config()
         assert "catalog_dir" in c

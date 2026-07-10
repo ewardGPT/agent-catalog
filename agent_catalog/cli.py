@@ -562,7 +562,6 @@ def scan(
     Scans Python files for classes decorated with @agent, builds manifests,
     and registers them in the catalog.
     """
-    import yaml
 
     from agent_catalog.discovery import scan_directory
 

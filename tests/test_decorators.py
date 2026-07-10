@@ -5,11 +5,9 @@ from __future__ import annotations
 from agent_catalog import agent, build_manifest, capability, dependency, interface, tool
 from agent_catalog.schema import (
     AgentManifest,
-    EvaluationMethod,
     SideEffect,
     Surface,
 )
-
 
 # ── Minimal agent ────────────────────────────────────────────────────────
 
@@ -385,7 +383,7 @@ class TestFullIntegration:
         assert m.metadata["team"] == "inbox"
 
         # Check auto-derived schema
-        read = [t for t in m.tools if t.name == "read_inbox"][0]
+        read = next(t for t in m.tools if t.name == "read_inbox")
         props = read.parameters.get("properties", {})
         assert "mailbox_id" in props
         assert props["mailbox_id"]["type"] == "string"

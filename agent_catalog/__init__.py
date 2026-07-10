@@ -19,4 +19,13 @@ from agent_catalog.decorators import (
     tool,
 )
 
+__all__ = [
+    "agent",
+    "build_manifest",
+    "capability",
+    "dependency",
+    "interface",
+    "tool",
+]
+
 __version__ = "0.2.0"

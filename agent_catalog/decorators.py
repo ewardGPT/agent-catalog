@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import inspect
 import typing
+from collections.abc import Callable
 from types import UnionType
-from typing import Any, Callable, get_type_hints
+from typing import Any, get_type_hints
 
 from agent_catalog.schema import (
     AgentManifest,

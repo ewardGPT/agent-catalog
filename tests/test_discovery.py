@@ -5,10 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import pytest
-
-from agent_catalog.decorators import agent, build_manifest
-
+from agent_catalog.decorators import build_manifest
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 

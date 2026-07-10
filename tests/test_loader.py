@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_catalog.decorators import agent, build_manifest, capability, tool
+from agent_catalog.decorators import build_manifest
 from agent_catalog.storage import CatalogStore
 
 SAMPLE_AGENT_CODE = """
@@ -85,7 +85,6 @@ class TestLoadAgentClass:
         assert instance.greet("World") == "Hello, World!"
 
     def test_load_missing_slug(self):
-        from agent_catalog.loader import LoaderError
 
         with tempfile.TemporaryDirectory() as td:
             store = CatalogStore(root=td)
@@ -102,14 +101,14 @@ class TestLoadAgentClass:
             manifest = AgentManifest(name="Bare", description="no metadata")
             store.register_manifest(manifest)
 
-            from agent_catalog.loader import load_agent_class, LoaderError
+            from agent_catalog.loader import LoaderError, load_agent_class
 
             with pytest.raises(LoaderError, match="no python_module"):
                 load_agent_class("bare", store=store)
 
     def test_load_missing_file(self, registered_slug):
         slug, store = registered_slug
-        from agent_catalog.loader import load_agent_class, LoaderError
+        from agent_catalog.loader import LoaderError, load_agent_class
 
         # Register with a non-existent path
         manifest = store.get(slug)
@@ -170,7 +169,7 @@ class TestGetCapability:
 
     def test_get_missing_capability(self, registered_slug):
         slug, store = registered_slug
-        from agent_catalog.loader import get_capability, LoaderError
+        from agent_catalog.loader import LoaderError, get_capability
 
         with pytest.raises(LoaderError, match="not found"):
             get_capability(slug, "nonexistent", store=store)

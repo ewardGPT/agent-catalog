@@ -58,7 +58,7 @@ indent-style = "space"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "RUF", "SIM", "PERF"]
-ignore = ["E501"]
+ignore = ["E501", "PERF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

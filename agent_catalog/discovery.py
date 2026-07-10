@@ -17,7 +17,6 @@ import importlib.util
 import inspect
 import sys
 from pathlib import Path
-from typing import Type
 
 from agent_catalog.decorators import AGENT_META_ATTR, build_manifest
 from agent_catalog.schema import AgentManifest
@@ -85,8 +84,8 @@ def scan_directory(
 
         try:
             classes = scan_module(pyfile)
-            for cls in classes:
-                results.append((pyfile, cls))
+            results.extend((pyfile, cls) for cls in classes)
+            continue
         except Exception:
             continue
 
