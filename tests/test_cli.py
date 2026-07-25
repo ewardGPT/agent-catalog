@@ -13,32 +13,6 @@ from agent_catalog.cli import app
 
 
 @pytest.fixture
-def runner():
-    return CliRunner()
-
-
-@pytest.fixture
-def manifest_file():
-    content = dedent("""\
-    manifest_version: "1.0"
-    name: "CLI Test Agent"
-    slug: cli-test
-    description: "Testing the CLI"
-    version: "1.0.0"
-    environment: production
-    status: active
-    capabilities:
-      - id: test_cap
-        description: "A test capability"
-        tools: [tool_one, tool_two]
-        surfaces: [cli]
-    """)
-    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
-        f.write(content)
-        return Path(f.name)
-
-
-@pytest.fixture
 def registered_env(runner, manifest_file):
     """Return a temp dir with cli-test already registered."""
     with tempfile.TemporaryDirectory() as td:
@@ -448,8 +422,6 @@ class TestServeMCP:
     def test_serve_mcp_short_help(self):
         """serve --help mentions MCP (strip ANSI for clean match)."""
         import re
-
-        from typer.testing import CliRunner
 
         from agent_catalog.cli import app
 
