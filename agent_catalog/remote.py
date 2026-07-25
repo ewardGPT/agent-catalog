@@ -38,7 +38,8 @@ def _git(*args: str, cwd: str | Path | None = None) -> str:
         timeout=30,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+        combined = (result.stderr.strip() or result.stdout.strip())
+        raise RuntimeError(f"git {' '.join(args)} failed: {combined}")
     return result.stdout.strip()
 
 
@@ -61,6 +62,11 @@ def publish(store_dir: str | Path | None = None, message: str | None = None) -> 
     # Ensure it's a git repo
     if not (cwd / ".git").exists():
         _git("init", cwd=cwd)
+        # Rename default branch to main for consistency
+        try:
+            _git("branch", "-M", "main", cwd=cwd)
+        except RuntimeError:
+            pass
         logger.info("Initialized git repo at %s", cwd)
 
     # Ensure remote is set
@@ -77,12 +83,13 @@ def publish(store_dir: str | Path | None = None, message: str | None = None) -> 
     try:
         _git("commit", "-m", msg, cwd=cwd)
     except RuntimeError as e:
-        if "nothing to commit" in str(e):
+        err = str(e)
+        if "nothing to commit" in err or "no changes" in err:
             print("Nothing to publish — catalog is unchanged.")
             return
         raise
     _git("push", "origin", "main", cwd=cwd)
-    print(f"Published {len(list(cwd.glob('*.yaml'))) - 1} agent(s) to {remote}")
+    logger.info("Published %s agent(s) to %s", len(list(cwd.glob("*.yaml"))) - 1, remote)
 
 
 def pull(store_dir: str | Path | None = None) -> None:

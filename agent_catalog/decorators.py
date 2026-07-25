@@ -209,6 +209,7 @@ class agent:
         model: ModelReference | dict | None = None,
         eval_contract: EvalContract | dict | None = None,
         metadata: dict | None = None,
+        labels: list[str] | None = None,
         manifest_version: str = "1.0",
     ) -> None:
         self._name = name
@@ -220,6 +221,7 @@ class agent:
         self._model = model
         self._eval_contract = eval_contract
         self._metadata = metadata or {}
+        self._labels = labels or []
         self._manifest_version = manifest_version
 
     def __call__(self, cls: type) -> type:
@@ -234,6 +236,7 @@ class agent:
             model=self._model,
             eval_contract=self._eval_contract,
             metadata=self._metadata,
+            labels=self._labels,
             manifest_version=self._manifest_version,
         )
         setattr(cls, AGENT_META_ATTR, existing)
@@ -546,4 +549,5 @@ def build_manifest(cls: type) -> AgentManifest:
         dependencies=deps_list,
         eval_contract=eval_contract,
         metadata=meta.get("metadata", {}),
+        labels=meta.get("labels", []),
     )

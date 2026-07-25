@@ -75,7 +75,6 @@ def _sync_impl(
         console.print(f"\n[dim]Dry run: would register {registered}, skip {skipped}[/]")
 
 
-@app.command()
 def sync(
     directory: str = typer.Argument(".", help="Directory to scan for agent manifests"),
     pattern: str = typer.Option(
