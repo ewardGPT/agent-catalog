@@ -68,11 +68,21 @@ def graph(
 @app.command()
 def serve(
     port: int = typer.Option(8420, "--port", "-p", help="HTTP port"),
+    mcp: bool = typer.Option(False, "--mcp", help="Run MCP server instead of HTTP (stdio transport)"),
 ):
-    """Start the Agent Marketplace web dashboard."""
-    from agent_catalog.serve import serve as run_serve
+    """Start the Agent Marketplace web dashboard.
 
-    run_serve(port=port, store=_get_store())
+    By default starts an HTTP server.  Pass --mcp to run as an MCP
+    server over stdio (for use with MCP clients like Claude Code).
+    """
+    if mcp:
+        from agent_catalog.mcp_server import run_server
+
+        run_server(store=_get_store())
+    else:
+        from agent_catalog.serve import serve as run_serve
+
+        run_serve(port=port, store=_get_store())
 
 
 @app.command()

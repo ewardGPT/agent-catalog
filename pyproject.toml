@@ -8,22 +8,16 @@ readme = "README.md"
 authors = [
     {name = "Ervin", email = "ervin@nexusgate.tech"},
 ]
-keywords = ["agents", "catalog", "registry", "ai-agents", "agent-management"]
+keywords = ["agents", "catalog", "registry", "ai-agents", "agent-management", "mcp"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-]
-
-dependencies = [
-    "typer>=0.15,<1",
-    "rich>=13.0,<14",
-    "pydantic>=2.0,<3",
-    "pyyaml>=6.0,<7",
-    "deepdiff>=8.0",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +27,9 @@ dev = [
     "ruff>=0.15,<1",
     "coverage[toml]>=7.6,<8",
     "mypy>=1.15",
+]
+mcp = [
+    "mcp>=1.0,<2",
 ]
 
 [project.scripts]
