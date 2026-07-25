@@ -63,10 +63,9 @@ def publish(store_dir: str | Path | None = None, message: str | None = None) -> 
     if not (cwd / ".git").exists():
         _git("init", cwd=cwd)
         # Rename default branch to main for consistency
-        try:
+        from contextlib import suppress
+        with suppress(RuntimeError):
             _git("branch", "-M", "main", cwd=cwd)
-        except RuntimeError:
-            pass
         logger.info("Initialized git repo at %s", cwd)
 
     # Ensure remote is set

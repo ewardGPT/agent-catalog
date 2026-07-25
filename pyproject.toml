@@ -65,7 +65,7 @@ indent-style = "space"
 select = ["E", "F", "I", "UP", "B", "C4", "RUF", "SIM", "PERF"]
 ignore = ["E501", "PERF"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E701"]
 
 [tool.pytest.ini_options]

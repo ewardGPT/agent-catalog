@@ -144,7 +144,7 @@ class TestRemotePublishPull:
             publish(store_dir=str(catalog))
 
             # Verify remote has the commit
-            log = subprocess.run(
+            subprocess.run(
                 ["git", "log", "--oneline"],
                 capture_output=True, text=True, cwd=remote, check=False,
             )
