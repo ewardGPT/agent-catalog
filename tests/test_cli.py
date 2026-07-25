@@ -450,7 +450,9 @@ class TestServeMCP:
         import re
 
         from typer.testing import CliRunner
+
         from agent_catalog.cli import app
+
         result = CliRunner().invoke(app, ["serve", "--help"])
         clean = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
         assert "--mcp" in clean
