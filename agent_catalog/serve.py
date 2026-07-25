@@ -26,6 +26,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from typing import Any
@@ -362,24 +363,28 @@ def serve(
     # ── Signal handling for graceful shutdown ────────────────────────────
     shutdown_requested = False
 
-    def _shutdown(signum: int, frame: Any = None) -> None:
-        nonlocal shutdown_requested
-        if shutdown_requested:
-            logger.warning("Forced shutdown (second signal)")
-            sys.exit(1)
-        shutdown_requested = True
-        logger.info("Shutdown requested (signal %d), waiting for handlers…", signum)
-        server.shutdown()
+    # Signal handlers only work in the main thread of the main interpreter.
+    if threading.current_thread() is threading.main_thread():
 
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
+        def _shutdown(signum: int, frame: Any = None) -> None:
+            nonlocal shutdown_requested
+            if shutdown_requested:
+                logger.warning("Forced shutdown (second signal)")
+                sys.exit(1)
+            shutdown_requested = True
+            logger.info("Shutdown requested (signal %d), waiting for handlers…", signum)
+            server.shutdown()
 
-    # ── Configure logging ────────────────────────────────────────────────
+        signal.signal(signal.SIGINT, _shutdown)
+        signal.signal(signal.SIGTERM, _shutdown)
+
+    # ── Configure logging (idempotent) ────────────────────────────────────
     log_level = os.environ.get("AGENT_CATALOG_LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         stream=sys.stderr,
+        force=False,
     )
 
     logger.info(

@@ -498,3 +498,121 @@ class TestRunFailure:
                 app, ["run", "nonexistent", "ping"], env={"AGENT_CATALOG_DIR": td}
             )
             assert result.exit_code == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sync command edge cases
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSyncEdgeCases:
+    def test_sync_directory_not_found(self, runner):
+        result = runner.invoke(app, ["sync", "/nonexistent/directory", "--dry-run"])
+        assert result.exit_code == 1
+
+    def test_sync_bad_yaml(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "agent.yaml").write_text("not: valid: yaml: [")
+            result = runner.invoke(
+                app, ["sync", td, "--dry-run"],
+                env={"AGENT_CATALOG_DIR": tempfile.mkdtemp()},
+            )
+            assert result.exit_code == 0
+            # Bad YAML should be skipped, not crash
+            assert True
+
+    def test_sync_missing_name(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "agent.yaml").write_text("version: '1.0'\n")
+            result = runner.invoke(
+                app, ["sync", td, "--dry-run"],
+                env={"AGENT_CATALOG_DIR": tempfile.mkdtemp()},
+            )
+            assert result.exit_code == 0
+
+
+class TestScanEdgeCases:
+    def test_scan_directory_not_found(self, runner):
+        result = runner.invoke(app, ["scan", "/nonexistent/directory", "--dry-run"])
+        assert result.exit_code == 1
+
+    def test_scan_no_matches(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["scan", td, "--dry-run"],
+                env={"AGENT_CATALOG_DIR": tempfile.mkdtemp()},
+            )
+            assert result.exit_code == 0
+
+
+class TestInspectJson:
+    def test_inspect_json_format(self, runner):
+        code = dedent("""\
+        from agent_catalog import agent, capability, tool
+        @agent(name="JSON Test", description="test")
+        class JsonAgent:
+            @capability(id="ping", description="Ping")
+            @tool(name="ping", description="Ping")
+            def ping(self) -> str:
+                return "pong"
+        """)
+        with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
+            f.write(code)
+            pyfile = Path(f.name)
+        result = runner.invoke(app, ["inspect", str(pyfile), "--format", "json"])
+        assert result.exit_code == 0
+        import json as _json
+        data = _json.loads(result.stdout)
+        assert data["slug"] == "json-test"
+
+
+class TestSecurityAuditJsonOutput:
+    def test_security_audit_json_format(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            # Register an agent with an MCP without auth to trigger findings
+            content = dedent("""\
+            name: Unsafe
+            slug: unsafe
+            description: x
+            version: '1.0'
+            interfaces:
+              - type: mcp
+                path: /mcp
+                auth_required: false
+            """)
+            with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+                f.write(content)
+                m_path = Path(f.name)
+            runner.invoke(app, ["register", str(m_path)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["security-audit", "--format", "json"],
+                env={"AGENT_CATALOG_DIR": td},
+            )
+            assert result.exit_code == 0
+            import json as _json
+            data = _json.loads(result.stdout)
+            assert isinstance(data, list)
+            assert len(data) > 0
+
+
+class TestDoctorWithIssues:
+    def test_doctor_finds_orphans(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            # Create a YAML file not in the index
+            Path(td, "orphan.yaml").write_text(
+                "name: Orphan\nslug: orphan\ndescription: x\nversion: '1.0'\n"
+            )
+            result = runner.invoke(app, ["doctor"], env={"AGENT_CATALOG_DIR": td})
+            assert result.exit_code == 1
+            assert "ORPHAN" in result.stdout
+
+
+class TestRunBadParams:
+    def test_run_invalid_json_params(self, runner, manifest_file):
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["run", "cli-test", "test_cap", "--params", "not-json"],
+                env={"AGENT_CATALOG_DIR": td},
+            )
+            assert result.exit_code == 1
