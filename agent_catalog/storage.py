@@ -41,6 +41,12 @@ class CatalogStore:
         self._index_path = self.root / "index.yaml"
         self._cached_index: CatalogIndex | None = None
         self._cached_index_mtime: float = -1.0
+        self._cached_agents: dict[str, AgentManifest] | None = None
+        """Cached {slug: AgentManifest}. Invalidated on any write.
+
+        ``list_all()`` populates this cache on first call and returns
+        cached results on subsequent calls within the same process.
+        """
 
     # ── Index operations ───────────────────────────────────────────────────
 
@@ -77,9 +83,10 @@ class CatalogStore:
         self._invalidate_cache()
 
     def _invalidate_cache(self) -> None:
-        """Drop the cached index so the next call re-reads from disk."""
+        """Drop the cached index and agents so the next call re-reads from disk."""
         self._cached_index = None
         self._cached_index_mtime = -1.0
+        self._cached_agents = None
 
     # ── CRUD ───────────────────────────────────────────────────────────────
 
@@ -131,6 +138,10 @@ class CatalogStore:
 
     def get(self, slug: str) -> AgentManifest:
         """Retrieve a single agent by slug."""
+        # Check agent cache first
+        if self._cached_agents is not None and slug in self._cached_agents:
+            return self._cached_agents[slug]
+
         idx = self.index()
         if slug not in idx.agents:
             raise KeyError(f"Agent '{slug}' not found in catalog. Registered: {list(idx.agents)}")
@@ -141,17 +152,27 @@ class CatalogStore:
         return self._parse(path)
 
     def list_all(self) -> list[AgentManifest]:
-        """List all registered agents."""
+        """List all registered agents.
+
+        Results are cached on first call and returned from cache on
+        subsequent calls.  The cache is invalidated on any write
+        operation (register, unregister, update).
+        """
+        if self._cached_agents is not None:
+            return list(self._cached_agents.values())
+
         idx = self.index()
-        result: list[AgentManifest] = []
+        agents: dict[str, AgentManifest] = {}
         for relpath in idx.agents.values():
             path = self.root / relpath
             if path.exists():
                 try:
-                    result.append(self._parse(path))
+                    a = self._parse(path)
+                    agents[a.slug] = a
                 except Exception:
                     logger.warning("Skipping unparseable manifest: %s", path)
-        return result
+        self._cached_agents = agents
+        return list(agents.values())
 
     def unregister(self, slug: str) -> bool:
         """Remove an agent from the catalog.  Returns True if it existed."""
