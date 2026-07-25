@@ -166,6 +166,7 @@ def _handle_tool_call(
             )
         elif name == "catalog_register":
             import yaml
+
             from agent_catalog.schema import AgentManifest
 
             raw = yaml.safe_load(args.get("yaml", ""))
