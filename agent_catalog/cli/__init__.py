@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from agent_catalog import __version__
 from agent_catalog.storage import CatalogStore
 
 # ── App ────────────────────────────────────────────────────────────────────────
@@ -27,7 +28,31 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+# Typer adds --install-completion and --show-completion automatically.
+
 console = Console()
+
+
+# ── Version flag ────────────────────────────────────────────────────────────────
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"agent-catalog {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main_options(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """Agent Catalog — declarative agent registry."""
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────

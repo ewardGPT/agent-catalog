@@ -242,6 +242,48 @@ class TestDoctor:
             assert "consistent" in result.stdout
 
 
+class TestVersion:
+    def test_version_flag(self, runner):
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert "agent-catalog" in result.stdout
+
+
+class TestJsonOutput:
+    def test_list_json(self, runner, manifest_file):
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["list", "--output", "json"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+            import json as _json
+            data = _json.loads(result.stdout)
+            assert "agents" in data
+            assert len(data["agents"]) == 1
+
+    def test_get_json(self, runner, manifest_file):
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["get", "cli-test", "--output", "json"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+            import json as _json
+            data = _json.loads(result.stdout)
+            assert data["slug"] == "cli-test"
+
+    def test_list_json_empty(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["list", "--output", "json"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+            import json as _json
+            data = _json.loads(result.stdout)
+            assert data["agents"] == []
+
+
 class TestInspect:
     def test_inspect_python_file(self, runner):
         code = dedent("""\

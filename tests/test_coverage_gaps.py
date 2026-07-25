@@ -358,3 +358,99 @@ class TestSlugValidation:
         assert "/" not in m.slug
         assert ".." not in m.slug
         assert all(c.isalnum() or c in "._-" for c in m.slug)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# config.py — validation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestConfigValidation:
+    def test_validate_config_clean(self):
+        from agent_catalog.config import DEFAULT_CONFIG, _validate_config
+
+        warnings = _validate_config(DEFAULT_CONFIG)
+        assert warnings == []
+
+    def test_validate_config_bad_type(self):
+        from agent_catalog.config import DEFAULT_CONFIG, _validate_config
+
+        bad = dict(DEFAULT_CONFIG)
+        bad["serve"] = {"port": "not-a-number"}  # should be int
+        warnings = _validate_config(bad)
+        assert any("port" in w for w in warnings)
+
+    def test_validate_config_unknown_key(self):
+        from agent_catalog.config import DEFAULT_CONFIG, _validate_config
+
+        bad = dict(DEFAULT_CONFIG)
+        bad["nonexistent_key"] = "value"
+        warnings = _validate_config(bad)
+        assert any("unknown" in w for w in warnings)
+
+    def test_get_validation_warnings_returns_list(self):
+        from agent_catalog.config import get_validation_warnings
+
+        assert isinstance(get_validation_warnings(), list)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# storage.py — index cache
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestStorageCache:
+    def test_index_caches_across_calls(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = CatalogStore(root=td)
+            idx1 = s.index()
+            # Second call returns the same cached object
+            idx2 = s.index()
+            assert idx1 is idx2
+
+    def test_index_cache_invalidated_on_write(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = CatalogStore(root=td)
+            idx1 = s.index()
+            # Register a manifest (triggers _save_index)
+            manifest = AgentManifest(name="CacheTest", description="x", version="1.0")
+            s.register_manifest(manifest)
+            idx2 = s.index()
+            # Should be a new object after write
+            assert idx1 is not idx2
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# diff.py — full diff modes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestDiffExtended:
+    def test_diff_type_change(self):
+        # Version collation means both are strings, so check environment instead
+        left2 = AgentManifest(name="A", description="X", environment="staging")
+        right2 = AgentManifest(name="A", description="X", environment="production")
+        report2 = diff_manifests(left2, right2)
+        assert report2.has_changes
+
+    def test_diff_iterable_add_remove(self):
+        left = AgentManifest(
+            name="A",
+            description="X",
+            tools=[{"name": "t1", "description": "T1"}],
+        )
+        right = AgentManifest(
+            name="A",
+            description="X",
+            tools=[
+                {"name": "t1", "description": "T1"},
+                {"name": "t2", "description": "T2"},
+            ],
+        )
+        report = diff_manifests(left, right)
+        assert report.has_changes
+
+    def test_diff_no_changes(self):
+        m = AgentManifest(name="A", description="X")
+        report = diff_manifests(m, m)
+        assert not report.has_changes

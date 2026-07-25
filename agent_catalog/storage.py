@@ -39,20 +39,47 @@ class CatalogStore:
             self.root = self.DEFAULT_DIR
         self.root.mkdir(parents=True, exist_ok=True)
         self._index_path = self.root / "index.yaml"
+        self._cached_index: CatalogIndex | None = None
+        self._cached_index_mtime: float = -1.0
 
     # ── Index operations ───────────────────────────────────────────────────
 
     def index(self) -> CatalogIndex:
-        """Load the catalog index, or return an empty one."""
+        """Load the catalog index, or return an empty one.
+
+        Results are cached based on the index file's mtime.  The cache
+        is invalidated on any write operation (_save_index, register,
+        unregister) so repeated calls within one CLI invocation don't
+        re-parse the same file.
+        """
+        if self._cached_index is not None:
+            if self._index_path.exists():
+                current_mtime = self._index_path.stat().st_mtime
+                if current_mtime <= self._cached_index_mtime:
+                    return self._cached_index
+            else:
+                return self._cached_index
+
         if not self._index_path.exists():
-            return CatalogIndex()
+            self._cached_index = CatalogIndex()
+            self._cached_index_mtime = -1.0
+            return self._cached_index
+
         data = yaml.safe_load(self._index_path.read_text()) or {}
-        return CatalogIndex(**data)
+        self._cached_index = CatalogIndex(**data)
+        self._cached_index_mtime = self._index_path.stat().st_mtime
+        return self._cached_index
 
     def _save_index(self, idx: CatalogIndex) -> None:
         idx.generated_at = datetime.now(timezone.utc)
         text = yaml.dump(idx.model_dump(mode="json", exclude_none=True), sort_keys=False)
         self._atomic_write(self._index_path, text)
+        self._invalidate_cache()
+
+    def _invalidate_cache(self) -> None:
+        """Drop the cached index so the next call re-reads from disk."""
+        self._cached_index = None
+        self._cached_index_mtime = -1.0
 
     # ── CRUD ───────────────────────────────────────────────────────────────
 

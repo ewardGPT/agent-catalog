@@ -29,14 +29,35 @@ def register(
 @app.command()
 def list(
     environment: str | None = typer.Option(None, "--env", "-e", help="Filter by environment"),
+    output: str = typer.Option("table", "--output", "-o", help="Output format: table, json"),
 ):
     """List all registered agents."""
+    import json as _json
+
     agents = _get_store().list_all()
     if environment:
         agents = [a for a in agents if a.environment == environment]
 
     if not agents:
-        console.print("[yellow]No agents registered.[/]")
+        if output == "json":
+            console.print(_json.dumps({"agents": []}))
+        else:
+            console.print("[yellow]No agents registered.[/]")
+        return
+
+    if output == "json":
+        data = [
+            {
+                "slug": a.slug,
+                "name": a.name,
+                "version": a.version,
+                "environment": a.environment,
+                "status": a.status,
+                "capabilities": [c.id for c in a.capabilities],
+            }
+            for a in sorted(agents, key=lambda x: x.slug)
+        ]
+        console.print(_json.dumps({"agents": data}, indent=2))
         return
 
     table = Table(title="Agent Catalog")
@@ -65,11 +86,17 @@ def list(
 @app.command()
 def get(
     slug: str = typer.Argument(..., help="Agent slug to retrieve"),
+    output: str = typer.Option("table", "--output", "-o", help="Output format: table, json"),
 ):
     """Show full details for an agent."""
+    import json as _json
+
     try:
         agent = _get_store().get(slug)
-        console.print(_render_manifest(agent))
+        if output == "json":
+            console.print(_json.dumps(agent.model_dump(mode="json", exclude_none=True), indent=2))
+        else:
+            console.print(_render_manifest(agent))
     except (KeyError, FileNotFoundError) as e:
         console.print(f"[red]\u2717[/] {e}")
         raise typer.Exit(code=1) from e
