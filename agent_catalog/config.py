@@ -14,12 +14,7 @@ DEFAULT_CONFIG = {
     "default_environment": "production",
     "sync": {
         "patterns": ["agent.yaml"],
-        "directories": [
-            "~/projects/active",
-            "~/projects/research",
-            "~/projects/trading",
-            "~/projects/palentir",
-        ],
+        "directories": [],
     },
     "security": {
         "fail_on": ["critical"],

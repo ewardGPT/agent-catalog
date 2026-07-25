@@ -38,6 +38,14 @@ def manifest_file():
         return Path(f.name)
 
 
+@pytest.fixture
+def registered_env(runner, manifest_file):
+    """Return a temp dir with cli-test already registered."""
+    with tempfile.TemporaryDirectory() as td:
+        runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+        yield td
+
+
 class TestRegister:
     def test_register_from_file(self, runner, manifest_file):
         with tempfile.TemporaryDirectory() as td:
@@ -110,3 +118,150 @@ class TestSearch:
             )
             assert result.exit_code == 0
             assert "No matching" in result.stdout
+
+
+class TestUnregister:
+    def test_unregister_existing(self, runner, manifest_file):
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["unregister", "cli-test", "--force"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+            assert "Unregistered" in result.stdout
+
+    def test_unregister_missing(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["unregister", "nonexistent", "--force"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+            assert "not found" in result.stdout
+
+
+class TestUpdate:
+    def test_update_existing(self, runner, manifest_file):
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+                f.write(manifest_file.read_text().replace("1.0.0", "2.0.0"))
+                updated = Path(f.name)
+            result = runner.invoke(
+                app, ["update", "cli-test", str(updated)], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+            assert "Updated" in result.stdout
+
+
+class TestDiff:
+    def test_diff_two_registered(self, runner, manifest_file):
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            content2 = manifest_file.read_text().replace("production", "staging")
+            with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+                f.write(content2)
+                path2 = Path(f.name)
+            runner.invoke(app, ["register", str(path2)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["diff", "cli-test", "--slug2", "cli-test"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+
+
+class TestSecurityAudit:
+    def test_security_audit_clean(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["security-audit"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+            assert "No security" in result.stdout
+
+    def test_security_audit_json(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["security-audit", "--format", "json"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+
+
+class TestGraph:
+    def test_graph_mermaid(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["graph"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+            assert "graph TD" in result.stdout
+
+    def test_graph_json(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["graph", "--format", "json"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 0
+
+
+class TestSync:
+    def test_sync_directory_no_matches(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["sync", td, "--pattern", "agent.yaml", "--dry-run"],
+                env={"AGENT_CATALOG_DIR": tempfile.mkdtemp()},
+            )
+            assert result.exit_code == 0
+            assert "No files matching" in result.stdout
+
+    def test_sync_directory_with_manifest(self, runner, manifest_file):
+        with tempfile.TemporaryDirectory() as td:
+            # Copy manifest into the target dir
+            dest = Path(td) / "agent.yaml"
+            dest.write_text(manifest_file.read_text())
+            result = runner.invoke(
+                app, ["sync", td, "--dry-run"],
+                env={"AGENT_CATALOG_DIR": tempfile.mkdtemp()},
+            )
+            assert result.exit_code == 0
+            assert "would register" in result.stdout
+
+
+class TestExportContract:
+    def test_export_no_contract(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(
+                app, ["export-contract", "nonexistent"], env={"AGENT_CATALOG_DIR": td}
+            )
+            assert result.exit_code == 1
+
+
+class TestDoctor:
+    def test_doctor_clean(self, runner):
+        with tempfile.TemporaryDirectory() as td:
+            result = runner.invoke(app, ["doctor"], env={"AGENT_CATALOG_DIR": td})
+            assert result.exit_code == 0
+            assert "consistent" in result.stdout
+
+
+class TestInspect:
+    def test_inspect_python_file(self, runner):
+        code = dedent("""\
+        from agent_catalog import agent, capability, tool
+
+        @agent(name="Inspect Test", description="Auto-discovered")
+        class InspectedAgent:
+            @capability(id="ping", description="Ping")
+            @tool(name="ping", description="Ping tool")
+            def ping(self) -> str:
+                return "pong"
+        """)
+        with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
+            f.write(code)
+            pyfile = Path(f.name)
+        result = runner.invoke(app, ["inspect", str(pyfile)])
+        assert result.exit_code == 0
+        assert "Inspect Test" in result.stdout
+
+    def test_inspect_not_found(self, runner):
+        result = runner.invoke(app, ["inspect", "/nonexistent/file.py"])
+        assert result.exit_code == 1
+        assert "not found" in result.stdout

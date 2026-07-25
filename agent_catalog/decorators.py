@@ -162,15 +162,15 @@ def _coerce_enum(val: Any, enum_cls: type) -> Any:
 
 
 def _coerce_surface(val: str | Surface) -> Surface:
-    return _coerce_enum(val, Surface)  # type: ignore[return-value]
+    return _coerce_enum(val, Surface)
 
 
 def _coerce_side_effect(val: str | SideEffect) -> SideEffect:
-    return _coerce_enum(val, SideEffect)  # type: ignore[return-value]
+    return _coerce_enum(val, SideEffect)
 
 
 def _coerce_eval_method(val: str | EvaluationMethod) -> EvaluationMethod:
-    return _coerce_enum(val, EvaluationMethod)  # type: ignore[return-value]
+    return _coerce_enum(val, EvaluationMethod)
 
 
 def _coerce_list(vals: list, coerce_fn: Callable) -> list:

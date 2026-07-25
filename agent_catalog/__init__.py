@@ -16,6 +16,7 @@ from agent_catalog.decorators import (
     capability,
     dependency,
     interface,
+    prompt_ref,
     tool,
 )
 
@@ -25,6 +26,7 @@ __all__ = [
     "capability",
     "dependency",
     "interface",
+    "prompt_ref",
     "tool",
 ]
 

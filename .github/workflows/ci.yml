@@ -27,5 +27,8 @@ jobs:
       - name: Lint
         run: ruff check agent_catalog/ tests/
 
+      - name: Type check
+        run: pip install mypy && mypy agent_catalog/
+
       - name: Test
         run: pytest -q --cov

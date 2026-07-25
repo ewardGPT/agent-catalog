@@ -3,16 +3,26 @@
 Git-ops friendly: every agent is a YAML file in a directory.  The registry
 index maps agent slugs to their file paths.  No database needed — `git diff`
 gives you change history for free.
+
+Production features:
+  - Atomic writes (temp file + os.replace)
+  - Slug-to-filename safety (path traversal prevention)
+  - Consistency check (orphaned / missing manifests)
+  - Structured logging
 """
 
 from __future__ import annotations
 
+import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
 from agent_catalog.schema import AgentManifest, CatalogIndex
+
+logger = logging.getLogger("agent-catalog.storage")
 
 
 class CatalogStore:
@@ -21,8 +31,6 @@ class CatalogStore:
     DEFAULT_DIR = Path.home() / ".config" / "agent-catalog" / "agents"
 
     def __init__(self, root: str | Path | None = None) -> None:
-        import os
-
         if root:
             self.root = Path(root)
         elif os.environ.get("AGENT_CATALOG_DIR"):
@@ -44,7 +52,7 @@ class CatalogStore:
     def _save_index(self, idx: CatalogIndex) -> None:
         idx.generated_at = datetime.now(timezone.utc)
         text = yaml.dump(idx.model_dump(mode="json", exclude_none=True), sort_keys=False)
-        self._index_path.write_text(text)
+        self._atomic_write(self._index_path, text)
 
     # ── CRUD ───────────────────────────────────────────────────────────────
 
@@ -58,24 +66,40 @@ class CatalogStore:
             raise FileNotFoundError(f"Manifest not found: {src}")
 
         manifest = self._parse(src)
-        return self.register_manifest(manifest)
+        return self._register(manifest)
 
     def register_manifest(self, manifest: AgentManifest) -> AgentManifest:
         """Register an AgentManifest directly (bypasses YAML file parsing).
 
         Copies the manifest into the catalog directory and indexes it.
         """
+        return self._register(manifest)
+
+    def _register(self, manifest: AgentManifest) -> AgentManifest:
+        """Common registration logic with atomic write + index update."""
         now = datetime.now(timezone.utc)
         manifest.registered_at = manifest.registered_at or now
         manifest.updated_at = now
 
-        dest = self.root / f"{manifest.slug}.yaml"
+        # Safe filename from slug (guards against path traversal)
+        filename = self._slug_filename(manifest.slug)
+        dest = self.root / filename
+
+        # Atomic write: manifest first, then index
         self._write_manifest(dest, manifest)
 
-        idx = self.index()
-        idx.agents[manifest.slug] = str(dest.relative_to(self.root))
-        self._save_index(idx)
+        try:
+            idx = self.index()
+            idx.agents[manifest.slug] = filename
+            self._save_index(idx)
+        except Exception:
+            # Rollback: remove orphaned manifest file
+            if dest.exists():
+                dest.unlink()
+            logger.exception("Failed to save index after registering %s", manifest.slug)
+            raise
 
+        logger.info("Registered %s @ %s", manifest.slug, manifest.environment)
         return manifest
 
     def get(self, slug: str) -> AgentManifest:
@@ -96,7 +120,10 @@ class CatalogStore:
         for relpath in idx.agents.values():
             path = self.root / relpath
             if path.exists():
-                result.append(self._parse(path))
+                try:
+                    result.append(self._parse(path))
+                except Exception:
+                    logger.warning("Skipping unparseable manifest: %s", path)
         return result
 
     def unregister(self, slug: str) -> bool:
@@ -104,10 +131,14 @@ class CatalogStore:
         idx = self.index()
         if slug not in idx.agents:
             return False
-        path = self.root / idx.agents.pop(slug)
+        relpath = idx.agents.pop(slug)
+        path = self.root / relpath
+
+        # Delete manifest first, then save index (reverse order of register)
         if path.exists():
             path.unlink()
         self._save_index(idx)
+        logger.info("Unregistered %s", slug)
         return True
 
     def update(self, slug: str, manifest: AgentManifest) -> AgentManifest:
@@ -118,7 +149,35 @@ class CatalogStore:
         manifest.updated_at = datetime.now(timezone.utc)
         path = self.root / idx.agents[slug]
         self._write_manifest(path, manifest)
+        logger.info("Updated %s", slug)
         return manifest
+
+    # ── Consistency check ──────────────────────────────────────────────────
+
+    def check_consistency(self) -> list[str]:
+        """Check catalog consistency.
+
+        Returns a list of human-readable issues found.  Empty list means
+        the catalog is consistent (every indexed manifest exists on disk,
+        no orphaned manifest files).
+        """
+        issues: list[str] = []
+        idx = self.index()
+
+        # Check every indexed manifest exists on disk
+        for slug, relpath in idx.agents.items():
+            path = self.root / relpath
+            if not path.exists():
+                issues.append(f"MISSING: agent '{slug}' indexed at {relpath} but file not found")
+
+        # Check every YAML file in the catalog directory is indexed
+        indexed_files = set(idx.agents.values())
+        indexed_files.add("index.yaml")
+        for f in self.root.iterdir():
+            if f.suffix == ".yaml" and f.name not in indexed_files:
+                issues.append(f"ORPHAN: file {f.name} exists but is not in the index")
+
+        return issues
 
     # ── Search ─────────────────────────────────────────────────────────────
 
@@ -159,6 +218,36 @@ class CatalogStore:
     def _write_manifest(path: Path, manifest: AgentManifest) -> None:
         """Serialize a manifest to YAML, preserving readability."""
         data = manifest.model_dump(mode="json", exclude_none=True)
-        # Make the YAML readable: no anchors, explicit flow style for lists
         text = yaml.dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True)
-        path.write_text(text)
+        CatalogStore._atomic_write(path, text)
+
+    @staticmethod
+    def _atomic_write(path: Path, content: str) -> None:
+        """Write *content* to *path* atomically.
+
+        Writes to a temporary file on the same filesystem, then renames
+        atomically via ``os.replace``.  If the process crashes mid-write
+        the target file is untouched and the temp file is left behind.
+        """
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        try:
+            tmp.write_text(content)
+            os.replace(str(tmp), str(path))
+        finally:
+            # Clean up temp file if rename failed or was interrupted
+            if tmp.exists():
+                tmp.unlink()
+
+    @staticmethod
+    def _slug_filename(slug: str) -> str:
+        """Convert a slug to a safe filename.
+
+        Strips any characters that could be used for path traversal,
+        then appends ``.yaml``.  Raises ``ValueError`` if the result
+        is empty or unsafe.
+        """
+        # Keep only safe filename characters
+        safe = "".join(c for c in slug if c.isalnum() or c in "._-")
+        if not safe or safe in (".", ".."):
+            raise ValueError(f"Slug {slug!r} produces unsafe filename")
+        return f"{safe}.yaml"

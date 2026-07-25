@@ -6,10 +6,15 @@ can do, what tools it uses, what model it runs, and how it integrates.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
+
+# Safe slug pattern: lowercase alphanumeric, dots, hyphens, underscores.
+# Prevents path traversal (no "/", "..", "\0", etc.).
+_SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -184,6 +189,32 @@ class AgentManifest(BaseModel):
         """Derive slug from name if not provided."""
         if not self.slug:
             self.slug = self.name.lower().replace(" ", "-").replace("_", "-")
+            # Ensure derived slug passes validation
+            if not _SLUG_PATTERN.match(self.slug):
+                # Strip unsafe chars from derived slug
+                safe = re.sub(r"[^a-z0-9._-]", "", self.slug)
+                self.slug = safe or "agent"
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def validate_slug_chars(cls, v: str) -> str:
+        """Reject slugs with path traversal characters."""
+        if not v:
+            return v
+        v = str(v).strip()
+        if "/" in v or "\\" in v or ".." in v or "\0" in v:
+            raise ValueError(
+                f"Slug {v!r} contains path traversal characters "
+                "(/, \\, .., null). Use only lowercase letters, "
+                "digits, dots, hyphens, and underscores."
+            )
+        if not _SLUG_PATTERN.match(v):
+            raise ValueError(
+                f"Slug {v!r} contains invalid characters. "
+                "Use only lowercase letters, digits, dots, "
+                "hyphens, and underscores."
+            )
+        return v.lower()
 
     @field_validator("version")
     @classmethod

@@ -13,8 +13,10 @@ Usage:
 
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import inspect
+import os
 import sys
 from pathlib import Path
 
@@ -47,16 +49,18 @@ def scan_module(module_path: str | Path) -> list[type]:
         return []
 
     module = importlib.util.module_from_spec(spec)
-    # Temporarily add parent to sys.path so relative imports work
+    # Temporarily add parent to sys.path so relative imports work.
+    # Track whether we added it so we only remove our own entry.
     parent = str(path.parent)
-    if parent not in sys.path:
+    added = parent not in sys.path
+    if added:
         sys.path.insert(0, parent)
     try:
         spec.loader.exec_module(module)
     except Exception:
         return []
     finally:
-        if parent in sys.path:
+        if added:
             sys.path.remove(parent)
 
     return find_agent_classes(module)
@@ -126,3 +130,48 @@ def discover_and_register(
             continue
 
     return manifests
+
+
+def find_manifest_files(
+    root: str | Path,
+    pattern: str = "agent.yaml",
+) -> list[Path]:
+    """Find YAML manifest files in *root* matching *pattern*.
+
+    Tries Python glob first (fastest), falls back to manual ``os.walk`` +
+    ``fnmatch`` for environments with broken ``rglob`` (container runtimes).
+    Also scans immediate subdirectories for ``agent.yaml`` explicitly.
+    """
+    root = Path(root).resolve()
+    if not root.exists():
+        return []
+
+    results: list[Path] = []
+
+    # Try Python glob first (works in most environments)
+    try:
+        py_results = list(root.glob(pattern))
+        if py_results:
+            return sorted(py_results)
+    except Exception:
+        pass
+
+    # Fallback: manual scan with os.walk
+    for dirpath, _dirnames, filenames in os.walk(str(root)):
+        for f in filenames:
+            if fnmatch.fnmatch(f, "agent.yaml") or fnmatch.fnmatch(f, "*.yaml"):
+                full = Path(dirpath) / f
+                try:
+                    if fnmatch.fnmatch(str(full.relative_to(root)), pattern):
+                        results.append(full)
+                except ValueError:
+                    continue
+
+    # Also scan immediate subdirs explicitly for agent.yaml
+    for entry in os.scandir(str(root)):
+        if entry.is_dir() and not entry.name.startswith("."):
+            candidate = Path(entry.path) / "agent.yaml"
+            if candidate.exists() and candidate not in results:
+                results.append(candidate)
+
+    return sorted(results)

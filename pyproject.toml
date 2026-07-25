@@ -1,6 +1,6 @@
 [project]
 name = "agent-catalog"
-version = "0.1.0"
+version = "0.2.0"
 description = "Declarative agent registry — catalog, discover, and diff agent capabilities across environments"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -24,7 +24,6 @@ dependencies = [
     "pydantic>=2.0,<3",
     "pyyaml>=6.0,<7",
     "deepdiff>=8.0",
-    "httpx>=0.28,<1",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +32,7 @@ dev = [
     "pytest-cov>=7.0,<8",
     "ruff>=0.15,<1",
     "coverage[toml]>=7.6,<8",
+    "mypy>=1.15",
 ]
 
 [project.scripts]
@@ -62,7 +62,8 @@ ignore = ["E501", "PERF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers --strict-config"
+addopts = "-q --strict-markers"
+markers = []
 
 [tool.coverage.run]
 branch = true
@@ -73,3 +74,13 @@ omit = ["tests/*"]
 show_missing = true
 skip_covered = true
 fail_under = 60
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+disable_error_code = ["valid-type", "no-any-return"]
+exclude = ["tests/"]

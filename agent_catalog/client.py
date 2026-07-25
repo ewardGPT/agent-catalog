@@ -252,6 +252,68 @@ class CatalogClient:
 # ── AsyncCatalogClient ────────────────────────────────────────────────────────
 
 
+class AsyncAgentsResource:
+    """Async wrapper around AgentsResource.
+
+    Every method runs the underlying sync call in a thread executor
+    via ``asyncio.to_thread`` so the event loop is never blocked.
+    """
+
+    def __init__(self, store: CatalogStore) -> None:
+        self._sync = AgentsResource(store)
+
+    async def list(self, *, env: str | None = None) -> list[AgentManifest]:
+        import asyncio
+
+        return await asyncio.to_thread(self._sync.list, env=env)
+
+    async def get(self, slug: str) -> AgentManifest:
+        import asyncio
+
+        return await asyncio.to_thread(self._sync.get, slug)
+
+    async def search(
+        self,
+        *,
+        capability: str | None = None,
+        tool: str | None = None,
+        surface: str | None = None,
+        env: str | None = None,
+    ) -> list[AgentManifest]:
+        import asyncio
+
+        return await asyncio.to_thread(
+            self._sync.search, capability=capability, tool=tool, surface=surface, env=env
+        )
+
+    async def filter(
+        self,
+        *,
+        env: str | None = None,
+        status: str | None = None,
+    ) -> list[AgentManifest]:
+        import asyncio
+
+        return await asyncio.to_thread(self._sync.filter, env=env, status=status)
+
+
+class AsyncSearchResource:
+    """Async wrapper around SearchResource."""
+
+    def __init__(self, store: CatalogStore) -> None:
+        self._sync = SearchResource(store)
+
+    async def by_capability(self, text: str) -> list[AgentManifest]:
+        import asyncio
+
+        return await asyncio.to_thread(self._sync.by_capability, text)
+
+    async def by_environment(self, env: str) -> list[AgentManifest]:
+        import asyncio
+
+        return await asyncio.to_thread(self._sync.by_environment, env)
+
+
 class AsyncCatalogClient:
     """Async mirror of CatalogClient.
 
@@ -260,26 +322,19 @@ class AsyncCatalogClient:
     """
 
     def __init__(self, **kwargs: Any) -> None:
-        self._sync = CatalogClient(**kwargs)
+        self._store = CatalogClient(**kwargs)._store
 
     @cached_property
-    def agents(self) -> AgentsResource:
-        return self._sync.agents
+    def agents(self) -> AsyncAgentsResource:
+        return AsyncAgentsResource(self._store)
 
     @cached_property
-    def search(self) -> SearchResource:
-        return self._sync.search
-
-    @cached_property
-    def with_raw_response(self) -> CatalogWithRawResponse:
-        return self._sync.with_raw_response
+    def search(self) -> AsyncSearchResource:
+        return AsyncSearchResource(self._store)
 
     async def list_slugs(self) -> list[str]:
-        """List all registered agent slugs."""
-        import asyncio
-
-        return await asyncio.to_thread(self._sync.list_slugs)
+        agents = await self.agents.list()
+        return [a.slug for a in agents]
 
     async def refresh(self) -> None:
-        """Re-read the catalog index from disk."""
         return
