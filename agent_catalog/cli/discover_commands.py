@@ -2,33 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
 import yaml
+from rich.console import Console
 
 from agent_catalog.cli import _get_store, app, console
 from agent_catalog.schema import AgentManifest
 
 
-@app.command()
-def sync(
-    directory: str = typer.Argument(".", help="Directory to scan for agent manifests"),
-    pattern: str = typer.Option(
-        "agent.yaml",
-        "--pattern",
-        "-p",
-        help="Filename pattern to match",
-    ),
-    env: str = typer.Option(
-        "production", "--env", "-e", help="Default environment for discovered agents"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be registered without doing it"
-    ),
-):
-    """Auto-discover and register agent manifests from a project directory."""
+def _sync_impl(
+    directory: str,
+    pattern: str,
+    env: str,
+    dry_run: bool,
+    get_store: Callable,
+    console: Console,
+) -> None:
+    """Shared implementation for the sync command.
 
+    Used by both ``sync`` and ``sync --watch``.
+    """
     from agent_catalog.discovery import find_manifest_files
 
     root = Path(directory).resolve()
@@ -60,7 +56,7 @@ def sync(
                 manifest.environment = env
 
             if not dry_run:
-                _get_store().register(path)
+                get_store().register(path)
                 console.print(f"  [green]\u2713[/] {rel} \u2192 {manifest.slug} @ {manifest.environment}")
             else:
                 console.print(
@@ -79,6 +75,25 @@ def sync(
         console.print(f"\n[dim]Dry run: would register {registered}, skip {skipped}[/]")
 
 
+@app.command()
+def sync(
+    directory: str = typer.Argument(".", help="Directory to scan for agent manifests"),
+    pattern: str = typer.Option(
+        "agent.yaml",
+        "--pattern",
+        "-p",
+        help="Filename pattern to match",
+    ),
+    env: str = typer.Option(
+        "production", "--env", "-e", help="Default environment for discovered agents"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be registered without doing it"
+    ),
+):
+    """Auto-discover and register agent manifests from a project directory."""
+
+    _sync_impl(directory, pattern, env, dry_run, _get_store, console)
 @app.command()
 def scan(
     directory: str = typer.Argument(".", help="Directory to scan for decorated agent classes"),

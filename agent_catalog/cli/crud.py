@@ -110,13 +110,15 @@ def search(
     tool: str | None = typer.Option(None, "--tool", "-t", help="Search by tool name"),
     surface: str | None = typer.Option(None, "--surface", "-s", help="Search by interface surface"),
     environment: str | None = typer.Option(None, "--env", "-e", help="Filter by environment"),
+    label: str | None = typer.Option(None, "--label", "-l", help="Filter by label/tag"),
 ):
-    """Search agents by capability, tool, surface, or environment."""
+    """Search agents by capability, tool, surface, environment, or label."""
     results = _get_store().search(
         capability=capability,
         tool=tool,
         surface=surface,
         environment=environment,
+        label=label,
     )
 
     if not results:

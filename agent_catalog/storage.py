@@ -258,8 +258,9 @@ class CatalogStore:
         tool: str | None = None,
         surface: str | None = None,
         environment: str | None = None,
+        label: str | None = None,
     ) -> list[AgentManifest]:
-        """Search agents by capability, tool, surface, or environment.
+        """Search agents by capability, tool, surface, environment, or label.
 
         All filters are AND'd together.  None means "match everything."
         """
@@ -272,6 +273,8 @@ class CatalogStore:
             agents = [a for a in agents if any(t.name == tool for t in a.tools)]
         if surface:
             agents = [a for a in agents if any(s.type.value == surface for s in a.interfaces)]
+        if label:
+            agents = [a for a in agents if label in a.labels]
         return agents
 
     # ── Helpers ────────────────────────────────────────────────────────────

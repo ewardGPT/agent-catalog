@@ -233,6 +233,20 @@ def create_server(store: CatalogStore | None = None):
                     "required": ["slug", "capability"],
                 },
             ),
+            types.Tool(
+                name="catalog_register",
+                description="Register a new agent manifest in the catalog",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "yaml": {
+                            "type": "string",
+                            "description": "YAML manifest content to register",
+                        },
+                    },
+                    "required": ["yaml"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -260,6 +274,17 @@ def create_server(store: CatalogStore | None = None):
                     args["capability"],
                     params=args.get("params"),
                 ))
+            elif name == "catalog_register":
+                import yaml
+
+                from agent_catalog.schema import AgentManifest
+
+                raw = yaml.safe_load(args["yaml"])
+                if not raw:
+                    return [types.TextContent(type="text", text="E:empty YAML")]
+                manifest = AgentManifest.model_validate(raw)
+                store.register_manifest(manifest)
+                return [types.TextContent(type="text", text=f"Registered {manifest.slug}")]
             else:
                 return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
         except Exception as e:

@@ -181,6 +181,9 @@ class AgentManifest(BaseModel):
     # Arbitrary metadata for project-specific fields
     metadata: dict = Field(default_factory=dict)
 
+    # Free-form labels for categorization and filtering
+    labels: list[str] = Field(default_factory=list)
+
     # Timestamps (populated by registry, not user)
     registered_at: datetime | None = None
     updated_at: datetime | None = None
