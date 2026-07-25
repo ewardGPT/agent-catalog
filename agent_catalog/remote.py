@@ -78,6 +78,12 @@ def publish(store_dir: str | Path | None = None, message: str | None = None) -> 
 
     # Add, commit, push
     _git("add", "-A", cwd=cwd)
+    # Set author identity for the commit (required in CI with no global git config)
+    try:
+        _git("config", "user.email", "agent-catalog@users.noreply.github.com", cwd=cwd)
+        _git("config", "user.name", "agent-catalog", cwd=cwd)
+    except RuntimeError:
+        pass
     msg = message or f"agent-catalog publish: update {len(list(cwd.glob('*.yaml'))) - 1} agent(s)"
     try:
         _git("commit", "-m", msg, cwd=cwd)
