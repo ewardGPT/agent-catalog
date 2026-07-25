@@ -136,6 +136,50 @@ def _search_agents(
     return _text(_truncate(text))
 
 
+def _handle_tool_call(
+    name: str, args: dict, store: CatalogStore
+) -> list[dict]:
+    """Route a tool call to the right handler.
+
+    Returns dict-based responses (type + text).  This is a module-level
+    function so it can be tested without MCP transport.
+    """
+    try:
+        if name == "catalog_list_agents":
+            return _list_agents(store, env=args.get("environment"))
+        elif name == "catalog_get_agent":
+            return _get_agent(store, args.get("slug", ""))
+        elif name == "catalog_search":
+            return _search_agents(
+                store,
+                capability=args.get("capability"),
+                tool=args.get("tool"),
+                surface=args.get("surface"),
+                env=args.get("environment"),
+            )
+        elif name == "catalog_invoke":
+            return _invoke_agent(
+                store,
+                args.get("slug", ""),
+                args.get("capability", ""),
+                params=args.get("params"),
+            )
+        elif name == "catalog_register":
+            import yaml
+            from agent_catalog.schema import AgentManifest
+
+            raw = yaml.safe_load(args.get("yaml", ""))
+            if not raw:
+                return _text("E:empty YAML")
+            manifest = AgentManifest.model_validate(raw)
+            store.register_manifest(manifest)
+            return _text(f"Registered {manifest.slug}")
+        else:
+            return _text(f"Unknown tool: {name}")
+    except Exception as e:
+        return _text(f"Error executing {name}: {e}")
+
+
 def create_server(store: CatalogStore | None = None):
     """Create an MCP server exposing the agent catalog.
 
@@ -254,41 +298,8 @@ def create_server(store: CatalogStore | None = None):
         name: str, arguments: dict[str, Any] | None
     ) -> list[types.TextContent]:
         args = arguments or {}
-        try:
-            if name == "catalog_list_agents":
-                return _tc(_list_agents(store, env=args.get("environment")))
-            elif name == "catalog_get_agent":
-                return _tc(_get_agent(store, args["slug"]))
-            elif name == "catalog_search":
-                return _tc(_search_agents(
-                    store,
-                    capability=args.get("capability"),
-                    tool=args.get("tool"),
-                    surface=args.get("surface"),
-                    env=args.get("environment"),
-                ))
-            elif name == "catalog_invoke":
-                return _tc(_invoke_agent(
-                    store,
-                    args["slug"],
-                    args["capability"],
-                    params=args.get("params"),
-                ))
-            elif name == "catalog_register":
-                import yaml
-
-                from agent_catalog.schema import AgentManifest
-
-                raw = yaml.safe_load(args["yaml"])
-                if not raw:
-                    return [types.TextContent(type="text", text="E:empty YAML")]
-                manifest = AgentManifest.model_validate(raw)
-                store.register_manifest(manifest)
-                return [types.TextContent(type="text", text=f"Registered {manifest.slug}")]
-            else:
-                return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
-        except Exception as e:
-            return [types.TextContent(type="text", text=f"Error executing {name}: {e}")]
+        result = _handle_tool_call(name, args, store)
+        return _tc(result)
 
     return server
 
