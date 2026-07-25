@@ -2,13 +2,13 @@
 
 Compare two manifests or two environments of the same agent.  Produces
 human-readable (and machine-parseable) diff output.
+
+Note: ``deepdiff`` is imported lazily to keep CLI startup fast.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-
-from deepdiff import DeepDiff
 
 from agent_catalog.schema import AgentManifest
 
@@ -59,6 +59,8 @@ def diff_manifests(
 
     Uses DeepDiff under the hood for smart structural comparison.
     """
+    from deepdiff import DeepDiff
+
     d_left = left.model_dump(mode="json", exclude_none=True)
     d_right = right.model_dump(mode="json", exclude_none=True)
 

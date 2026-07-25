@@ -16,10 +16,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import mcp.server.stdio
-import mcp.types as types
-from mcp.server.lowlevel import Server
-
 from agent_catalog.loader import invoke_capability
 from agent_catalog.storage import CatalogStore
 
@@ -60,8 +56,13 @@ def _agent_brief(a) -> dict:
     }
 
 
-_EMPTY = [types.TextContent(type="text", text="[]")]
+_EMPTY = [{"type": "text", "text": "[]"}]
 """Pre-allocated empty response."""
+
+
+def _text(text: str) -> list[dict]:
+    """Build a TextContent dict (avoids importing mcp.types at module level)."""
+    return [{"type": "text", "text": text}]
 
 
 def _get_store() -> CatalogStore:
@@ -71,10 +72,10 @@ def _get_store() -> CatalogStore:
     return CatalogStore(root=root) if root else CatalogStore()
 
 
-# ── Tool handlers (compact output) ────────────────────────────────────────────
+# ── Tool handlers (compact output, return dicts not mcp types) ────────────────
 
 
-def _list_agents(store: CatalogStore, env: str | None = None) -> list[types.TextContent]:
+def _list_agents(store: CatalogStore, env: str | None = None) -> list[dict]:
     """List agents — returns compact JSON array of {slug, name, env, status}."""
     agents = store.list_all()
     if env:
@@ -83,35 +84,35 @@ def _list_agents(store: CatalogStore, env: str | None = None) -> list[types.Text
         return _EMPTY
     data = [_agent_brief(a) for a in sorted(agents, key=lambda x: x.slug)]
     text = json.dumps(data, separators=(",", ":"))
-    return [types.TextContent(type="text", text=_truncate(text))]
+    return _text(_truncate(text))
 
 
-def _get_agent(store: CatalogStore, slug: str) -> list[types.TextContent]:
+def _get_agent(store: CatalogStore, slug: str) -> list[dict]:
     """Get one agent — returns compact JSON with all manifest fields."""
     try:
         a = store.get(slug)
         data = a.model_dump(mode="json", exclude_none=True)
         text = json.dumps(data, separators=(",", ":"))
-        return [types.TextContent(type="text", text=_truncate(text))]
+        return _text(_truncate(text))
     except KeyError as e:
-        return [types.TextContent(type="text", text=_truncate(f"E:{e}"))]
+        return _text(_truncate(f"E:{e}"))
 
 
 def _invoke_agent(
     store: CatalogStore, slug: str, capability: str, params: str | None = None
-) -> list[types.TextContent]:
+) -> list[dict]:
     """Invoke an agent capability — result is hard-truncated."""
     kwargs: dict[str, Any] = {}
     if params:
         try:
             kwargs = json.loads(params)
         except json.JSONDecodeError as e:
-            return [types.TextContent(type="text", text=_truncate(f"E:invalid JSON {e}"))]
+            return _text(_truncate(f"E:invalid JSON {e}"))
     try:
         result = invoke_capability(slug, capability, store=store, **kwargs)
-        return [types.TextContent(type="text", text=_truncate(str(result), _MAX_INVOKE_CHARS))]
+        return _text(_truncate(str(result), _MAX_INVOKE_CHARS))
     except Exception as e:
-        return [types.TextContent(type="text", text=_truncate(f"E:{e}"))]
+        return _text(_truncate(f"E:{e}"))
 
 
 def _search_agents(
@@ -120,7 +121,7 @@ def _search_agents(
     tool: str | None = None,
     surface: str | None = None,
     env: str | None = None,
-) -> list[types.TextContent]:
+) -> list[dict]:
     """Search agents — returns slugs-only JSON array."""
     results = store.search(
         capability=capability,
@@ -132,17 +133,24 @@ def _search_agents(
         return _EMPTY
     slugs = sorted(a.slug for a in results)
     text = json.dumps(slugs, separators=(",", ":"))
-    return [types.TextContent(type="text", text=_truncate(text))]
+    return _text(_truncate(text))
 
 
-def create_server(store: CatalogStore | None = None) -> Server:
+def create_server(store: CatalogStore | None = None):
     """Create an MCP server exposing the agent catalog.
 
     Args:
         store: CatalogStore instance (default: auto-detect from env/config).
     """
+    import mcp.types as types
+    from mcp.server.lowlevel import Server
+
     store = store or _get_store()
     server = Server("agent-catalog")
+
+    def _tc(result: list[dict]) -> list[types.TextContent]:
+        """Convert dict-based responses to TextContent."""
+        return [types.TextContent(type=r["type"], text=r["text"]) for r in result]
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
@@ -234,24 +242,24 @@ def create_server(store: CatalogStore | None = None) -> Server:
         args = arguments or {}
         try:
             if name == "catalog_list_agents":
-                return _list_agents(store, env=args.get("environment"))
+                return _tc(_list_agents(store, env=args.get("environment")))
             elif name == "catalog_get_agent":
-                return _get_agent(store, args["slug"])
+                return _tc(_get_agent(store, args["slug"]))
             elif name == "catalog_search":
-                return _search_agents(
+                return _tc(_search_agents(
                     store,
                     capability=args.get("capability"),
                     tool=args.get("tool"),
                     surface=args.get("surface"),
                     env=args.get("environment"),
-                )
+                ))
             elif name == "catalog_invoke":
-                return _invoke_agent(
+                return _tc(_invoke_agent(
                     store,
                     args["slug"],
                     args["capability"],
                     params=args.get("params"),
-                )
+                ))
             else:
                 return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
         except Exception as e:
@@ -267,6 +275,8 @@ def run_server(store: CatalogStore | None = None) -> None:
     for MCP CLI tools).
     """
     import asyncio
+
+    import mcp.server.stdio
 
     server = create_server(store)
     async def _run() -> None:

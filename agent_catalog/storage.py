@@ -200,6 +200,28 @@ class CatalogStore:
         logger.info("Updated %s", slug)
         return manifest
 
+    def register_many(self, manifests: list[AgentManifest]) -> list[AgentManifest]:
+        """Register multiple agents with a single index update.
+
+        Significantly faster than calling ``register_manifest`` in a loop
+        when importing many agents at once.  Index is written once after
+        all manifest files are written.
+        """
+        now = datetime.now(timezone.utc)
+        idx = self.index()
+        registered: list[AgentManifest] = []
+        for m in manifests:
+            m.registered_at = m.registered_at or now
+            m.updated_at = now
+            filename = self._slug_filename(m.slug)
+            dest = self.root / filename
+            self._write_manifest(dest, m)
+            idx.agents[m.slug] = filename
+            registered.append(m)
+        self._save_index(idx)
+        logger.info("Registered %d agents (batch)", len(registered))
+        return registered
+
     # ── Consistency check ──────────────────────────────────────────────────
 
     def check_consistency(self) -> list[str]:

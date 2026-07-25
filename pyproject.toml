@@ -1,6 +1,6 @@
 [project]
 name = "agent-catalog-new"
-version = "0.2.0"
+version = "0.3.0"
 description = "Declarative agent registry — catalog, discover, and diff agent capabilities across environments"
 requires-python = ">=3.10"
 license = {text = "MIT"}

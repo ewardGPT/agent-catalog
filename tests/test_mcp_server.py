@@ -60,13 +60,13 @@ class TestMCPServerHelpers:
             from agent_catalog.mcp_server import _list_agents
 
             result = _list_agents(s)
-            assert result[0].text == "[]"
+            assert result[0]["text"] == "[]"
 
     def test_list_agents(self, store):
         from agent_catalog.mcp_server import _list_agents
 
         result = _list_agents(store)
-        data = json.loads(result[0].text)
+        data = json.loads(result[0]["text"])
         assert len(data) == 1
         assert data[0]["s"] == "mcp-test"
         assert data[0]["n"] == "MCP Test Agent"
@@ -75,16 +75,16 @@ class TestMCPServerHelpers:
         from agent_catalog.mcp_server import _list_agents
 
         result = _list_agents(store, env="production")
-        assert "mcp-test" in result[0].text
+        assert "mcp-test" in result[0]["text"]
 
         result2 = _list_agents(store, env="staging")
-        assert result2[0].text == "[]"
+        assert result2[0]["text"] == "[]"
 
     def test_get_agent(self, store):
         from agent_catalog.mcp_server import _get_agent
 
         result = _get_agent(store, "mcp-test")
-        data = json.loads(result[0].text)
+        data = json.loads(result[0]["text"])
         assert data["slug"] == "mcp-test"
         assert data["name"] == "MCP Test Agent"
 
@@ -92,23 +92,23 @@ class TestMCPServerHelpers:
         from agent_catalog.mcp_server import _get_agent
 
         result = _get_agent(store, "nonexistent")
-        assert "E:" in result[0].text
+        assert "E:" in result[0]["text"]
 
     def test_search_by_capability(self, store):
         from agent_catalog.mcp_server import _search_agents
 
         result = _search_agents(store, capability="ping")
-        data = json.loads(result[0].text)
+        data = json.loads(result[0]["text"])
         assert "mcp-test" in data
 
         result2 = _search_agents(store, capability="nonexistent")
-        assert result2[0].text == "[]"
+        assert result2[0]["text"] == "[]"
 
     def test_search_with_no_args(self, store):
         from agent_catalog.mcp_server import _search_agents
 
         result = _search_agents(store)
-        data = json.loads(result[0].text)
+        data = json.loads(result[0]["text"])
         assert len(data) == 1
 
     def test_invoke_missing_metadata(self, store):
@@ -116,13 +116,13 @@ class TestMCPServerHelpers:
         from agent_catalog.mcp_server import _invoke_agent
 
         result = _invoke_agent(store, "mcp-test", "ping")
-        assert "E:" in result[0].text
+        assert "E:" in result[0]["text"]
 
     def test_invoke_bad_json_params(self, store):
         from agent_catalog.mcp_server import _invoke_agent
 
         result = _invoke_agent(store, "mcp-test", "ping", params="not-json")
-        assert "E:" in result[0].text
+        assert "E:" in result[0]["text"]
 
     def test_agent_brief(self, store):
         from agent_catalog.mcp_server import _agent_brief
