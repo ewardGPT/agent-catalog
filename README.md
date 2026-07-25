@@ -1,48 +1,94 @@
 # Agent Catalog
 
-Declarative agent registry — catalog, discover, and diff agent capabilities across environments. Git-ops friendly. No database required.
+YAML-based agent registry. Register agents, list them, diff their manifests across environments, run consistency checks. Filesystem-backed — no database, git-ops compatible.
 
-## Quick Start
+## Install
 
 ```bash
 pip install -e .
+```
 
-# Register an agent from a manifest file
+## Usage
+
+### Register / List / Get
+
+```bash
 agent-catalog register ./examples/agentic-inbox.yaml
-
-# List everything
 agent-catalog list
-agent-catalog list --env production
-
-# Get full details
 agent-catalog get agentic-inbox
+```
 
-# Search by capability, tool, or surface
+### Search
+
+```bash
 agent-catalog search --capability send_email
 agent-catalog search --tool read_inbox
 agent-catalog search --surface mcp
-
-# Diff staging vs production
-agent-catalog diff agentic-inbox --right examples/agentic-inbox-staging.yaml
-
-# Validate a manifest without registering
-agent-catalog validate ./my-agent.yaml
 ```
 
-## CLI Reference
+### Diff
 
-| Command | Description |
-|---|---|
-| `register <path>` | Register agent from YAML manifest |
-| `list [--env X]` | List all agents, optionally filtered |
-| `get <slug>` | Show full agent details |
-| `search [--capability X] [--tool X] [--surface X]` | Find agents by attribute |
-| `diff <slug> [--right <path>] [--right-env X]` | Compare two manifests |
-| `validate <path>` | Validate manifest without registering |
-| `update <slug> <path>` | Update existing agent |
-| `unregister <slug> [--force]` | Remove from catalog |
+```bash
+# Against a file
+agent-catalog diff agentic-inbox --right ./other.yaml
 
-## Manifest Format
+# Between two registered agents
+agent-catalog diff agentic-inbox --slug2 nexusgate
+
+# Between environment snapshots
+agent-catalog diff agentic-inbox --right-env staging
+```
+
+### Validate / Inspect
+
+```bash
+agent-catalog validate ./my-agent.yaml
+agent-catalog inspect ./decorated_agent.py
+```
+
+### Consistency check
+
+```bash
+agent-catalog doctor
+```
+
+### Security audit
+
+```bash
+agent-catalog security-audit
+agent-catalog security-audit --format json
+```
+
+### Web dashboard
+
+```bash
+agent-catalog serve
+# → http://localhost:8420
+```
+
+## Commands
+
+| Command | Action |
+|---------|--------|
+| `register <path>` | Register agent from YAML |
+| `list [--env]` | List agents |
+| `get <slug>` | Show agent details |
+| `search [--capability] [--tool] [--surface] [--env]` | Find agents |
+| `diff <slug> [--right] [--slug2] [--right-env]` | Compare manifests |
+| `validate <path>` | Validate YAML without registering |
+| `unregister <slug>` | Remove agent |
+| `update <slug> <path>` | Update manifest |
+| `sync <dir> [--pattern]` | Bulk register YAML files from a directory |
+| `scan <dir>` | Discover @agent-decorated Python classes |
+| `inspect <file>` | Show manifest generated from a Python file |
+| `export-contract <slug>` | Export eval contract as YAML |
+| `security-audit [--format json]` | Check agents for security issues |
+| `graph [--format json]` | Show dependency graph (Mermaid or JSON) |
+| `serve [--port]` | Start web dashboard |
+| `run <slug> <capability>` | Invoke a capability at runtime |
+| `doctor` | Check catalog consistency |
+
+## Manifest format
 
 ```yaml
 manifest_version: "1.0"
@@ -90,7 +136,6 @@ dependencies:
   - name: postgres
     type: database
     required: true
-    description: "Primary data store"
 
 eval_contract:
   suites: [my_project:injection, my_project:quality]
@@ -106,10 +151,38 @@ prompt:
 
 ## Storage
 
-Manifests stored as YAML files in `~/.config/agent-catalog/agents/`. Set `AGENT_CATALOG_DIR` to override. The `index.yaml` maps slugs to files.
+Manifests are YAML files in `~/.config/agent-catalog/agents/`. `index.yaml` maps slugs to filenames. Set `AGENT_CATALOG_DIR` to use a different directory — point it at a git repo and changes show up in `git diff`.
 
-Git-ops: point `AGENT_CATALOG_DIR` at a git repo to track every change via `git diff`.
+## Python SDK
 
-## Example
+```python
+from agent_catalog.client import CatalogClient
 
-See `examples/agentic-inbox.yaml` for a complete production manifest.
+client = CatalogClient()
+for agent in client.agents.list():
+    print(agent.slug, agent.environment)
+
+# Async
+from agent_catalog.client import AsyncCatalogClient
+client = AsyncCatalogClient()
+agents = await client.agents.list()
+```
+
+## Decorator API
+
+```python
+from agent_catalog import agent, capability, tool, build_manifest
+
+@agent(name="My Agent", version="1.0.0")
+class MyAgent:
+    @capability(id="greet", description="Greets the user")
+    @tool(name="greet", description="Say hello")
+    def greet(self, name: str) -> str:
+        return f"Hello, {name}!"
+
+manifest = build_manifest(MyAgent)
+```
+
+## Examples
+
+See `examples/agentic-inbox.yaml`, `examples/nexusgate.yaml`, `examples/trading-agent.yaml`.
