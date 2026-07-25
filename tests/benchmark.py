@@ -263,7 +263,7 @@ def main():
     }
 
     for n in scales:
-        scale = benchmark_scale(n, results["scales"])
+        benchmark_scale(n, results["scales"])
         if args.http and n <= 100:
             print(f"\n  HTTP server ({n} agents):")
             http_times = benchmark_http(n)

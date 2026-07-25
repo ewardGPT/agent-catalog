@@ -104,4 +104,4 @@ def pull(store_dir: str | Path | None = None) -> None:
         print(f"Pulled latest agents from {remote}")
     except RuntimeError as e:
         print(f"Pull failed: {e}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from e
