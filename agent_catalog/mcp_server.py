@@ -1,13 +1,13 @@
 """MCP server for Agent Catalog.
 
-Exposes the agent catalog as MCP tools so any MCP client (Claude Code,
-Cursor, etc.) can discover and invoke agents from the catalog.
+Exposes the agent catalog as MCP tools with minimal token overhead.
+All responses are:
+  - Compact JSON or short text (no verbose prose)
+  - Hard-truncated at 1500 chars per tool call
+  - Lists return slugs only (not full agent text)
+  - Details on demand via catalog_get_agent
 
 Usage:
-    # Run as standalone MCP server (stdio transport)
-    python -m agent_catalog.mcp_server
-
-    # Or from the CLI
     agent-catalog serve --mcp
 """
 
@@ -21,8 +21,47 @@ import mcp.types as types
 from mcp.server.lowlevel import Server
 
 from agent_catalog.loader import invoke_capability
-from agent_catalog.schema import AgentManifest
 from agent_catalog.storage import CatalogStore
+
+# ── Token budget ──────────────────────────────────────────────────────────────
+
+_MAX_RESPONSE_CHARS = 1500
+"""Hard cap on text returned per tool call to limit token burn."""
+
+_MAX_INVOKE_CHARS = 2000
+"""Higher cap for invoke results (actual agent output)."""
+
+
+def _truncate(text: str, limit: int = _MAX_RESPONSE_CHARS) -> str:
+    """Truncate text to *limit* chars, appending a count if cut."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    # Cut at last space or newline to avoid mid-word breaks
+    break_at = max(cut.rfind(" "), cut.rfind("\n"), 0)
+    if break_at > limit // 2:
+        cut = cut[:break_at]
+    return f"{cut}\n... [{len(text) - len(cut)} more chars -- use catalog_get_agent for full details]"
+
+
+def _agent_summary(a) -> str:
+    """Slug and name only — densest possible agent reference."""
+    return f"{a.slug}:{a.name}"
+
+
+def _agent_brief(a) -> dict:
+    """Compact agent dict (~200 bytes vs ~500 for full format)."""
+    return {
+        "s": a.slug,
+        "n": a.name,
+        "v": a.version,
+        "e": a.environment,
+        "st": a.status,
+    }
+
+
+_EMPTY = [types.TextContent(type="text", text="[]")]
+"""Pre-allocated empty response."""
 
 
 def _get_store() -> CatalogStore:
@@ -32,67 +71,47 @@ def _get_store() -> CatalogStore:
     return CatalogStore(root=root) if root else CatalogStore()
 
 
-def _format_agent(a: AgentManifest) -> str:
-    """Format an agent manifest as a readable string."""
-    lines = [
-        f"Name: {a.name}",
-        f"Slug: {a.slug}",
-        f"Version: {a.version}",
-        f"Environment: {a.environment}",
-        f"Status: {a.status}",
-        f"Description: {a.description}",
-    ]
-    if a.model:
-        lines.append(f"Model: {a.model.provider}/{a.model.name}")
-    if a.capabilities:
-        lines.append("Capabilities: " + ", ".join(c.id for c in a.capabilities))
-    if a.tools:
-        lines.append("Tools: " + ", ".join(t.name for t in a.tools))
-    if a.dependencies:
-        lines.append("Dependencies: " + ", ".join(d.name for d in a.dependencies))
-    return "\n".join(lines)
+# ── Tool handlers (compact output) ────────────────────────────────────────────
 
 
 def _list_agents(store: CatalogStore, env: str | None = None) -> list[types.TextContent]:
-    """List agents, optionally filtered by environment."""
+    """List agents — returns compact JSON array of {slug, name, env, status}."""
     agents = store.list_all()
     if env:
         agents = [a for a in agents if a.environment == env]
     if not agents:
-        return [types.TextContent(type="text", text="No agents found.")]
-    parts = [f"Found {len(agents)} agent(s):\n"]
-    for a in sorted(agents, key=lambda x: x.slug):
-        parts.append(f"- {a.slug} ({a.name}) @ {a.environment} — {a.status}")
-        caps = ", ".join(c.id for c in a.capabilities[:3])
-        if caps:
-            parts[-1] += f" [{caps}]"
-    return [types.TextContent(type="text", text="\n".join(parts))]
+        return _EMPTY
+    data = [_agent_brief(a) for a in sorted(agents, key=lambda x: x.slug)]
+    text = json.dumps(data, separators=(",", ":"))
+    return [types.TextContent(type="text", text=_truncate(text))]
 
 
 def _get_agent(store: CatalogStore, slug: str) -> list[types.TextContent]:
-    """Get full details for one agent."""
+    """Get one agent — returns compact JSON with all manifest fields."""
     try:
         a = store.get(slug)
-        return [types.TextContent(type="text", text=_format_agent(a))]
+        data = a.model_dump(mode="json", exclude_none=True)
+        text = json.dumps(data, separators=(",", ":"))
+        return [types.TextContent(type="text", text=_truncate(text))]
     except KeyError as e:
-        return [types.TextContent(type="text", text=f"Error: {e}")]
+        return [types.TextContent(type="text", text=_truncate(f"E:{e}"))]
 
 
 def _invoke_agent(
     store: CatalogStore, slug: str, capability: str, params: str | None = None
 ) -> list[types.TextContent]:
-    """Invoke an agent's capability at runtime."""
+    """Invoke an agent capability — result is hard-truncated."""
     kwargs: dict[str, Any] = {}
     if params:
         try:
             kwargs = json.loads(params)
         except json.JSONDecodeError as e:
-            return [types.TextContent(type="text", text=f"Invalid JSON params: {e}")]
+            return [types.TextContent(type="text", text=_truncate(f"E:invalid JSON {e}"))]
     try:
         result = invoke_capability(slug, capability, store=store, **kwargs)
-        return [types.TextContent(type="text", text=str(result))]
+        return [types.TextContent(type="text", text=_truncate(str(result), _MAX_INVOKE_CHARS))]
     except Exception as e:
-        return [types.TextContent(type="text", text=f"Error: {e}")]
+        return [types.TextContent(type="text", text=_truncate(f"E:{e}"))]
 
 
 def _search_agents(
@@ -102,7 +121,7 @@ def _search_agents(
     surface: str | None = None,
     env: str | None = None,
 ) -> list[types.TextContent]:
-    """Search agents by various criteria."""
+    """Search agents — returns slugs-only JSON array."""
     results = store.search(
         capability=capability,
         tool=tool,
@@ -110,11 +129,10 @@ def _search_agents(
         environment=env,
     )
     if not results:
-        return [types.TextContent(type="text", text="No matching agents.")]
-    parts = [f"Found {len(results)} matching agent(s):\n"]
-    for a in sorted(results, key=lambda x: x.slug):
-        parts.append(f"- {a.slug} ({a.name}) @ {a.environment}")
-    return [types.TextContent(type="text", text="\n".join(parts))]
+        return _EMPTY
+    slugs = sorted(a.slug for a in results)
+    text = json.dumps(slugs, separators=(",", ":"))
+    return [types.TextContent(type="text", text=_truncate(text))]
 
 
 def create_server(store: CatalogStore | None = None) -> Server:
