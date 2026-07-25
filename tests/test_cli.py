@@ -443,16 +443,17 @@ class TestExportContractToFile:
 class TestServeMCP:
     def test_serve_mcp_imports(self, runner):
         """Verify the --mcp flag triggers the right import path."""
-        # Just verify the serve command has the mcp option
         assert True
 
     def test_serve_mcp_short_help(self):
-        """serve --help mentions MCP."""
-        from typer.testing import CliRunner
+        """serve --help mentions MCP (strip ANSI for clean match)."""
+        import re
 
+        from typer.testing import CliRunner
         from agent_catalog.cli import app
         result = CliRunner().invoke(app, ["serve", "--help"])
-        assert "--mcp" in result.stdout
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+        assert "--mcp" in clean
 
 
 class TestSecurityAuditWithAgent:
