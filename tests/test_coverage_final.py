@@ -224,3 +224,43 @@ class TestDecoratorDeep:
         class NA: pass
         with pytest.raises(TypeError):
             build_manifest(NA)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# diff_commands.py — env snapshots, contract export edge cases
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestDiffCommands:
+    def test_diff_left_env_not_found(self, runner, manifest_file):
+        """diff --left-env with nonexistent env exits 1."""
+        from agent_catalog.cli import app
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["diff", "cli-test", "--left-env", "nonexistent"],
+                env={"AGENT_CATALOG_DIR": td},
+            )
+            assert result.exit_code == 1
+
+    def test_diff_right_env_not_found(self, runner, manifest_file):
+        """diff --right-env with nonexistent env exits 1."""
+        from agent_catalog.cli import app
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["diff", "cli-test", "--right-env", "nonexistent"],
+                env={"AGENT_CATALOG_DIR": td},
+            )
+            assert result.exit_code == 1
+
+    def test_export_contract_no_contract(self, runner, manifest_file):
+        """export-contract on agent without eval_contract exits 1."""
+        from agent_catalog.cli import app
+        with tempfile.TemporaryDirectory() as td:
+            runner.invoke(app, ["register", str(manifest_file)], env={"AGENT_CATALOG_DIR": td})
+            result = runner.invoke(
+                app, ["export-contract", "cli-test"],
+                env={"AGENT_CATALOG_DIR": td},
+            )
+            assert result.exit_code == 1
