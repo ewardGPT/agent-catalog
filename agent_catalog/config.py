@@ -6,7 +6,9 @@ Validates the config structure on load and reports bad keys.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -91,7 +93,7 @@ def _validate_config(cfg: dict) -> list[str]:
 
     # Check known key types
     for dotted_key, expected_type in _CONFIG_SCHEMA.items():
-        val = cfg
+        val: dict | Any = cfg
         for part in dotted_key.split("."):
             val = val.get(part) if isinstance(val, dict) else None
             if val is None:
