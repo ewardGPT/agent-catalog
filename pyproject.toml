@@ -1,5 +1,5 @@
 [project]
-name = "agent-catalog"
+name = "agent-catalog-new"
 version = "0.2.0"
 description = "Declarative agent registry — catalog, discover, and diff agent capabilities across environments"
 requires-python = ">=3.10"
